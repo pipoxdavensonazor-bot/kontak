@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { getDb, schema, eq, and, or, like, desc, lt } from "./db/index.js";
+import { RegisterSchema, LoginSchema, SearchSchema, SendMessageSchema, GetMessagesSchema, GetOrCreateSchema, CallSchema, validate } from "./validation.js";
 
 export class KontakRoom extends DurableObject {
   constructor(ctx, env) {
@@ -97,10 +98,10 @@ export class KontakRoom extends DurableObject {
   }
 
   async handleRegister(ws, msg) {
-    const phone = String(msg.phone || "").replace(/\D/g, "");
-    const name = String(msg.name || "").trim().slice(0, 40);
-    const password = String(msg.password || "");
-    if (!phone || phone.length < 6 || !name || password.length < 4) throw new Error("invalid");
+    const data = validate(RegisterSchema, msg);
+    const phone = data.phone.replace(/\D/g, "");
+    const name = data.name.trim().slice(0, 40);
+    const password = data.password;
 
     const existing = await this.db.select().from(schema.users).where(eq(schema.users.phone, phone)).get();
     if (existing) throw new Error("phone-taken");
@@ -116,8 +117,9 @@ export class KontakRoom extends DurableObject {
   }
 
   async handleLogin(ws, msg) {
-    const phone = String(msg.phone || "").replace(/\D/g, "");
-    const password = String(msg.password || "");
+    const data = validate(LoginSchema, msg);
+    const phone = data.phone.replace(/\D/g, "");
+    const password = data.password;
     const user = await this.db.select().from(schema.users).where(eq(schema.users.phone, phone)).get();
     if (!user) throw new Error("bad-creds");
     const hash = await this.hashPass(password, user.salt);
