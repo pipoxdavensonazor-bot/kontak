@@ -14,8 +14,10 @@ class_name = "KontakRoom"
 type = "durable-object"
 storage = "sqlite"
 
-# Only serve public files
-[assets]
-directory = "./public"
-binding = "ASSETS"
-run_worker_first = true
+# D1 database (remplace TON_ID après création)
+[[d1_databases]]
+binding = "DB"
+database_name = "kontak-db"
+database_id = "TON_ID_ICI"
+migrations_dir = "migrations"
+
