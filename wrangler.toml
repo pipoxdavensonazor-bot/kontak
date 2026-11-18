@@ -1,0 +1,21 @@
+name = "kontak"
+main = "src/worker.js"
+compatibility_date = "2026-11-18"
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "KONTAK"
+class_name = "KontakRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["KontakRoom"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kontak-db"
+database_id = "YOUR_D1_ID_HERE"
+
+[assets]
+directory = "."
+binding = "ASSETS"
