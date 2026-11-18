@@ -1,0 +1,5 @@
+node_modules/
+kontak.db
+kontak.db-wal
+kontak.db-shm
+*.log
