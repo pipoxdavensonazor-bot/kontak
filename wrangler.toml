@@ -3,6 +3,9 @@ main = "src/worker.js"
 compatibility_date = "2026-11-18"
 compatibility_flags = ["nodejs_compat"]
 
+# Faster builds
+minify = true
+
 [[durable_objects.bindings]]
 name = "KONTAK"
 class_name = "KontakRoom"
@@ -11,6 +14,8 @@ class_name = "KontakRoom"
 type = "durable-object"
 storage = "sqlite"
 
+# Only serve public files
 [assets]
-directory = "."
+directory = "./public"
 binding = "ASSETS"
+run_worker_first = true
