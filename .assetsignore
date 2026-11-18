@@ -1,0 +1,12 @@
+node_modules
+.git
+*.log
+.wrangler
+server.js
+render.yaml
+DEPLOY.md
+schema.sql
+src
+package.json
+package-lock.json
+wrangler.toml
