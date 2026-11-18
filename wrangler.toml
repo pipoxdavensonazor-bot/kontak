@@ -7,9 +7,9 @@ compatibility_flags = ["nodejs_compat"]
 name = "KONTAK"
 class_name = "KontakRoom"
 
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["KontakRoom"]
+[exports.KontakRoom]
+type = "durable-object"
+storage = "sqlite"
 
 [assets]
 directory = "."
