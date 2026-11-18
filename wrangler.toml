@@ -9,13 +9,7 @@ class_name = "KontakRoom"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["KontakRoom"]
-
-# D1 désactivé temporairement
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "kontak-db"
-# database_id = "TON_ID_ICI"
+new_sqlite_classes = ["KontakRoom"]
 
 [assets]
 directory = "."
