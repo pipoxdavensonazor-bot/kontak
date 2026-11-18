@@ -441,6 +441,7 @@ $("callBtn").onclick=()=>startCall(false);
 $("audioBtn").onclick=()=>startCall(true);
 
 function onIncomingCall(o){
+  if(!me || o.from === me.id) return; // ignore own calls
   pendingOffer=o;
   $("incomingFrom").textContent=(o.fromName||"Moun")+" ap rele…";
   $("incoming").hidden=false;
