@@ -19,7 +19,11 @@ export class KontakRoom extends DurableObject {
 
   async webSocketMessage(ws, message) {
     let msg;
-    try { msg = JSON.parse(message); } catch { return; }
+    try { msg = JSON.parse(message); } catch { 
+      this.send(ws, { type: "error", error: "bad-json" });
+      return; 
+    }
+
     try {
       switch (msg.type) {
         case "register": return await this.handleRegister(ws, msg);
@@ -35,10 +39,14 @@ export class KontakRoom extends DurableObject {
         case "callIce":
         case "callDecline":
         case "callHangup":
-          return this.relayCall(ws, msg);
+          return await this.relayCall(ws, msg);
+        default:
+          this.send(ws, { type: "error", error: "unknown-type" });
       }
     } catch (e) {
-      this.send(ws, { type: "error", error: e.message || "server-error" });
+      console.error("Message handler error:", e);
+      const code = e.message || "server-error";
+      this.send(ws, { type: "error", error: code });
     }
   }
 
