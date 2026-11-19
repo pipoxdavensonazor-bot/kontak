@@ -20,10 +20,9 @@ directory = "./public"
 binding = "ASSETS"
 run_worker_first = true
 
-# D1 (décommente et remplace l'ID quand prêt)
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "kontak-db"
-# database_id = "TON_ID"
-# migrations_dir = "migrations"
-
+# D1 database
+[[d1_databases]]
+binding = "DB"
+database_name = "kontak-db"
+database_id = "54fcd242-55db-4a79-be1e-21ee6a62b159"
+migrations_dir = "migrations"
