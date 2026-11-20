@@ -22,17 +22,27 @@ export default {
         }
       }
 
-      // Static assets
-      if (url.pathname === "/" || !url.pathname.includes(".")) {
-        const indexReq = new Request(new URL("/index.html", request.url), request);
-        const res = await env.ASSETS.fetch(indexReq);
-        if (res.status === 404) {
-          return new Response("App not found", { status: 404 });
+      // Static assets - try ASSETS first
+      if (env.ASSETS) {
+        try {
+          const path = url.pathname === "/" ? "/index.html" : url.pathname;
+          const assetReq = new Request(new URL(path, request.url), request);
+          const res = await env.ASSETS.fetch(assetReq);
+          if (res.status !== 404) return res;
+        } catch (e) {
+          console.error("Assets error:", e);
         }
-        return res;
       }
 
-      return await env.ASSETS.fetch(request);
+      // Fallback for SPA
+      if (url.pathname === "/" || !url.pathname.includes(".")) {
+        return new Response("Chargement...", {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" }
+        });
+      }
+
+      return new Response("Not found", { status: 404 });
     } catch (e) {
       console.error("Worker error:", e);
       return new Response(JSON.stringify({ error: "internal-error" }), {
