@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v7";
+  const BUILD = "v8";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -94,6 +94,7 @@
     $("mainView").hidden = false;
     $("logoutBtn").hidden = false;
     toast(T("welcome") + " " + me.name + "!");
+    askNotify();
     send({ type: "getConversations" });
     flushOutbox();
   }
@@ -137,6 +138,7 @@
     else if (o.type === "callAnswer") onCallAnswer(o);
     else if (o.type === "callIce") onRemoteIce(o);
     else if (o.type === "callDecline" || o.type === "callHangup") endCall();
+    else if (o.type === "callBusy") onCallBusy();
     else if (o.type === "presence") onPresence(o);
   }
 
@@ -304,6 +306,10 @@
       $("msgs").scrollTop = $("msgs").scrollHeight;
     }
     send({ type: "getConversations" });
+    if (me && o.message && o.message.from !== me.id) {
+      const looking = document.hasFocus() && !document.hidden && Number(o.convId) === Number(currentConv);
+      if (!looking) notify("Kontak", o.message.body);
+    }
   }
 
   function onPresence(o) {
@@ -488,6 +494,7 @@
       await pc.setLocalDescription(offer);
       await limitVideoBitrate();
       send({ type: "callOffer", convId: callConv, offer: pc.localDescription.toJSON(), audioOnly: !hasVideo });
+      startRing(true);
     } catch (err) {
       toast("Mikwo/kamera pa disponib. Otorize yo nan navigatè a.");
       endCall();
@@ -507,8 +514,10 @@
       return;
     }
     pendingOffer = o;
-    $("incomingFrom").textContent = o.fromName || "Kontak";
+    $("incomingFrom").textContent = (o.fromName || "Kontak") + " ap rele ou";
     $("incoming").hidden = false;
+    startRing(false);
+    if (document.hidden || !document.hasFocus()) notify("Apèl Kontak", (o.fromName || "Yon moun") + " ap rele ou");
   }
 
   $("acceptBtn").onclick = async () => {
@@ -516,6 +525,7 @@
     const o = pendingOffer;
     pendingOffer = null;
     $("incoming").hidden = true;
+    stopRing();
     callConv = Number(o.convId);
     const wantVideo = !o.audioOnly;
     $("videoOverlay").hidden = false;
@@ -541,10 +551,12 @@
     if (pendingOffer) send({ type: "callDecline", convId: pendingOffer.convId });
     pendingOffer = null;
     $("incoming").hidden = true;
+    stopRing();
   };
 
   function onCallAnswer(o) {
     if (!pc || !o.answer) return;
+    stopRing();
     pc.setRemoteDescription(new RTCSessionDescription(o.answer)).then(flushIce).catch(() => {});
   }
 
@@ -555,14 +567,67 @@
     else pc.addIceCandidate(c).catch(() => {});
   }
 
-  function endCall() {
+  let ringTimer = null;
+  let ringCtx = null;
+  function stopRing() {
+    if (ringTimer) clearInterval(ringTimer);
+    ringTimer = null;
+    if (ringCtx) { ringCtx.close().catch(() => {}); ringCtx = null; }
+  }
+  function beep(ctx, freq, at, dur) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = freq;
+    g.gain.value = 0.05;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start(at);
+    o.stop(at + dur);
+  }
+  function startRing(outgoing) {
+    stopRing();
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    ringCtx = new Ctx();
+    const burst = () => {
+      if (!ringCtx) return;
+      const t = ringCtx.currentTime;
+      if (outgoing) beep(ringCtx, 440, t, 1);
+      else { beep(ringCtx, 440, t, 0.18); beep(ringCtx, 480, t + 0.22, 0.25); }
+    };
+    burst();
+    ringTimer = setInterval(burst, outgoing ? 2500 : 1800);
+  }
+  async function askNotify() {
+    if (!("Notification" in window) || Notification.permission !== "default") return;
+    try { await Notification.requestPermission(); } catch {}
+  }
+  async function notify(title, body) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+      if (reg && reg.showNotification) await reg.showNotification(title, { body, tag: "kontak", renotify: true });
+      else new Notification(title, { body, tag: "kontak" });
+    } catch {
+      try { new Notification(title, { body }); } catch {}
+    }
+  }
+
+  function onCallBusy() {
+    toast("Moun sa deja nan yon apèl.");
+    endCall(false);
+  }
+
+  function endCall(notifyPeer = true) {
+    stopRing();
     if (pc) { try { pc.close(); } catch {} pc = null; }
     if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
     $("videoOverlay").hidden = true;
     $("incoming").hidden = true;
     $("remoteVid").srcObject = null;
     $("localVid").srcObject = null;
-    if (callConv) send({ type: "callHangup", convId: callConv });
+    if (notifyPeer && callConv) send({ type: "callHangup", convId: callConv });
     callConv = null;
     iceQueue = [];
     pendingOffer = null;

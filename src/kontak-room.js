@@ -7,11 +7,15 @@ export class KontakRoom extends DurableObject {
     super(ctx, env);
     this.online = new Map();
     this.wsUser = new Map();
+    this.busy = new Map();
     this.db = getDb(env.DB);
     try {
       for (const sock of ctx.getWebSockets()) {
         const att = sock.deserializeAttachment();
-        if (att && att.userId) this.track(att.userId, sock);
+        if (att && att.userId) {
+          this.track(att.userId, sock);
+          if (att.busyWith) this.busy.set(att.userId, att.busyWith);
+        }
       }
     } catch (e) {
       console.error("restore ws", e);
@@ -69,6 +73,14 @@ export class KontakRoom extends DurableObject {
         if (set.size === 0) this.online.delete(userId);
       }
       this.wsUser.delete(ws);
+      const peer = this.busy.get(userId);
+      if (!this.online.has(userId)) {
+        this.busy.delete(userId);
+        if (peer) {
+          this.busy.delete(peer);
+          this.broadcastToUser(peer, { type: "callHangup", from: userId });
+        }
+      }
       this.broadcastPresence(userId, false);
     }
   }
@@ -275,6 +287,24 @@ export class KontakRoom extends DurableObject {
     this.broadcastToUser(peerId, { type: "typing", convId, from: meId, fromName: me ? me.name : "?" });
   }
 
+  setBusy(userId, peerId) {
+    this.busy.set(userId, peerId);
+    const set = this.online.get(userId);
+    if (!set) return;
+    for (const sock of set) {
+      try { sock.serializeAttachment({ userId, busyWith: peerId }); } catch {}
+    }
+  }
+
+  clearBusy(userId) {
+    this.busy.delete(userId);
+    const set = this.online.get(userId);
+    if (!set) return;
+    for (const sock of set) {
+      try { sock.serializeAttachment({ userId, busyWith: null }); } catch {}
+    }
+  }
+
   async relayCall(ws, msg) {
     const meId = this.needUser(ws);
     let peerId = Number(msg.peerId);
@@ -284,6 +314,23 @@ export class KontakRoom extends DurableObject {
     }
     if (!peerId || peerId === meId) return;
     const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
-    this.broadcastToUser(peerId, { ...msg, from: meId, fromName: me ? me.name : "?" });
+    const fromName = me ? me.name : "?";
+
+    if (msg.type === "callOffer") {
+      const peerBusy = this.busy.get(peerId);
+      const meBusy = this.busy.get(meId);
+      if ((peerBusy && peerBusy !== meId) || (meBusy && meBusy !== peerId)) {
+        this.send(ws, { type: "callBusy", convId: msg.convId, fromName });
+        return;
+      }
+      this.setBusy(meId, peerId);
+      this.setBusy(peerId, meId);
+    }
+    if (msg.type === "callHangup" || msg.type === "callDecline") {
+      this.clearBusy(meId);
+      this.clearBusy(peerId);
+    }
+
+    this.broadcastToUser(peerId, { ...msg, from: meId, fromName });
   }
 }
