@@ -54,11 +54,18 @@ body.hc .conv.active{background:#d0d0d0}
 body.hc .msg{background:#e8e8e8;color:#000}
 body.hc .msg.me{background:#b3e6b3}
 #composer{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
-#videoOverlay{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:12px}
+#videoOverlay{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:50;display:none;flex-direction:column;align-items:center;justify-content:flex-end;gap:10px;padding:12px 12px 18px}
 #videoOverlay:not([hidden]){display:flex}
-#vids{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;align-items:center;width:100%}
-#vids video{width:min(520px,92vw);height:min(390px,56vh);object-fit:cover;border-radius:12px;background:#111;display:block}
-#localVid{transform:scaleX(-1);width:min(240px,42vw);height:min(180px,28vh)}
+#vids{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;width:100%;flex:1}
+#vids video{width:min(520px,92vw);height:min(280px,38vh);object-fit:cover;border-radius:12px;background:#111;display:block}
+#localVid{transform:scaleX(-1);width:min(180px,36vw);height:min(120px,18vh)}
+#callControls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:min(520px,100%)}
+#callControls button{min-height:48px;flex:1}
+#hangBtn{flex-basis:100%;font-size:18px}
+#dialModal{position:fixed;left:50%;top:10vh;transform:translateX(-50%);z-index:40;width:min(360px,92vw)}
+#dialShow{min-height:42px;font-size:28px;letter-spacing:1px;text-align:center;padding:8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+#dialKeys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+#dialKeys button{min-height:52px;font-size:20px;background:#0b1226;color:var(--txt);border:1px solid var(--line)}
 #incoming{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:60;display:none;align-items:center;justify-content:center}
 #incoming:not([hidden]){display:flex}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e293b;border:1px solid var(--line);padding:10px 16px;border-radius:12px;z-index:70}

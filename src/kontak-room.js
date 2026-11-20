@@ -47,6 +47,7 @@ export class KontakRoom extends DurableObject {
         case "search": return await this.handleSearch(ws, msg);
         case "getConversations": return await this.handleGetConversations(ws);
         case "getOrCreateConversation": return await this.handleGetOrCreate(ws, msg);
+        case "dial": return await this.handleDial(ws, msg);
         case "getMessages": return await this.handleGetMessages(ws, msg);
         case "sendMessage": return await this.handleSendMessage(ws, msg);
         case "setProfile": return await this.handleSetProfile(ws, msg);
@@ -334,6 +335,13 @@ export class KontakRoom extends DurableObject {
       conv = res[0];
     }
     this.send(ws, { type: "conversation", id: conv.id, peer: this.pub(peer) });
+  }
+
+  async handleDial(ws, msg) {
+    const phone = String(msg.phone || "").replace(/\D/g, "");
+    const peer = await this.db.select().from(schema.users).where(eq(schema.users.phone, phone)).get();
+    if (!peer) throw new Error("no-peer");
+    return this.handleGetOrCreate(ws, { peerId: peer.id });
   }
 
   async handleGetMessages(ws, msg) {

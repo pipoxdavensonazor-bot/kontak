@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v11";
+  const BUILD = "v12";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -134,6 +134,11 @@
     else if (o.type === "conversation") {
       if (o.peer) currentPeer = o.peer;
       openChat(o.id);
+      if (pendingDial) {
+        const audioOnly = pendingDial === "audio";
+        pendingDial = null;
+        startCall(audioOnly);
+      }
     } else if (o.type === "messages") renderMessages(o.messages || [], o.convId);
     else if (o.type === "new-message") onNewMessage(o);
     else if (o.type === "typing") onTyping(o);
@@ -544,7 +549,7 @@
     return servers;
   }
 
-  let pc = null, localStream = null, callConv = null, pendingOffer = null, iceQueue = [];
+  let pc = null, localStream = null, callConv = null, pendingOffer = null, iceQueue = [], pendingDial = null, screenTrack = null;
 
   function flushIce() {
     if (!pc || !pc.remoteDescription) return;
@@ -771,6 +776,8 @@
 
   function endCall(notifyPeer = true) {
     stopRing();
+    if (screenTrack) { try { screenTrack.stop(); } catch {} screenTrack = null; }
+    if ($("shareBtn")) $("shareBtn").textContent = "Ekran";
     if (pc) { try { pc.close(); } catch {} pc = null; }
     if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
     $("videoOverlay").hidden = true;
@@ -782,7 +789,7 @@
     iceQueue = [];
     pendingOffer = null;
   }
-  $("hangBtn").onclick = endCall;
+  $("hangBtn").onclick = () => endCall();
   $("muteBtn").onclick = () => {
     if (!localStream) return;
     const t = localStream.getAudioTracks()[0];
@@ -814,6 +821,59 @@
     t.enabled = !t.enabled;
     $("camBtn").textContent = t.enabled ? "Kamera: ON" : "Kamera: OFF";
   };
+  $("shareBtn").onclick = async () => {
+    if (!pc || !localStream) return;
+    const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+    if (screenTrack) {
+      const ending = screenTrack;
+      screenTrack = null;
+      ending.onended = null;
+      const cam = localStream.getVideoTracks()[0] || null;
+      if (sender) await sender.replaceTrack(cam);
+      try { ending.stop(); } catch {}
+      attachVideo("localVid", localStream);
+      $("shareBtn").textContent = "Ekran";
+      return;
+    }
+    try {
+      const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      screenTrack = display.getVideoTracks()[0];
+      screenTrack.onended = () => { if (screenTrack) $("shareBtn").click(); };
+      if (sender) await sender.replaceTrack(screenTrack);
+      else {
+        pc.addTrack(screenTrack, localStream);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await limitVideoBitrate();
+        send({ type: "callOffer", convId: callConv, offer: pc.localDescription.toJSON(), audioOnly: false });
+      }
+      const preview = new MediaStream([screenTrack]);
+      attachVideo("localVid", preview);
+      $("shareBtn").textContent = "Kanpe ekran";
+    } catch {
+      toast("Pataj ekran refize");
+    }
+  };
+  function dialDigit(ch) {
+    const el = $("dialShow");
+    if (ch === "x") el.textContent = el.textContent.slice(0, -1);
+    else if (el.textContent.length < 15) el.textContent += ch;
+  }
+  $("dialBtn").onclick = () => { $("dialModal").hidden = false; };
+  $("dialClose").onclick = () => { $("dialModal").hidden = true; };
+  $("dialKeys").onclick = (e) => {
+    const k = e.target && e.target.dataset && e.target.dataset.k;
+    if (k) dialDigit(k);
+  };
+  function placeDial(audioOnly) {
+    const phone = digits($("dialShow").textContent);
+    if (phone.length < 8) return toast("Nimewo twò kout");
+    pendingDial = audioOnly ? "audio" : "video";
+    $("dialModal").hidden = true;
+    if (!send({ type: "dial", phone })) { pendingDial = null; toast("Pa konekte"); }
+  }
+  $("dialAudio").onclick = () => placeDial(true);
+  $("dialVideo").onclick = () => placeDial(false);
   $("callBtn").onclick = () => startCall(false);
   $("audioBtn").onclick = () => startCall(true);
 })();
