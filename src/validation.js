@@ -1,16 +1,21 @@
 import { z } from "zod";
 
+const phone = z
+  .string()
+  .transform((s) => String(s || "").replace(/\D/g, ""))
+  .pipe(z.string().min(8, "Nimewo twò kout (8-15 chif)").max(15, "Nimewo twò long"));
+
 export const RegisterSchema = z.object({
   type: z.literal("register"),
-  name: z.string().min(1).max(40),
-  phone: z.string().min(6).max(20),
-  password: z.string().min(4).max(100),
+  name: z.string().trim().min(1, "Non obligatwa").max(40),
+  phone,
+  password: z.string().min(4, "Modpas omwen 4 karaktè").max(100),
 });
 
 export const LoginSchema = z.object({
   type: z.literal("login"),
-  phone: z.string().min(6).max(20),
-  password: z.string().min(4).max(100),
+  phone,
+  password: z.string().min(4, "Modpas omwen 4 karaktè").max(100),
 });
 
 export const SearchSchema = z.object({
@@ -36,19 +41,10 @@ export const GetOrCreateSchema = z.object({
   peerId: z.number().int().positive(),
 });
 
-export const CallSchema = z.object({
-  type: z.enum(["callOffer", "callAnswer", "callIce", "callDecline", "callHangup"]),
-  convId: z.number().int().positive().optional(),
-  peerId: z.number().int().positive().optional(),
-  sdp: z.string().optional(),
-  candidate: z.string().optional(),
-  audioOnly: z.boolean().optional(),
-});
-
 export function validate(schema, data) {
   const result = schema.safeParse(data);
   if (!result.success) {
-    const msg = result.error.issues.map(i => i.message).join(", ");
+    const msg = result.error.issues.map((i) => i.message).join(", ");
     throw new Error(msg || "validation-error");
   }
   return result.data;

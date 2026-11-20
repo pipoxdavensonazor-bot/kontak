@@ -3,21 +3,25 @@ import { KontakRoom } from "./kontak-room.js";
 export { KontakRoom };
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     try {
       const url = new URL(request.url);
 
-      // WebSocket
       if (url.pathname === "/ws" || request.headers.get("Upgrade") === "websocket") {
         const id = env.KONTAK.idFromName("global");
-        const stub = env.KONTAK.get(id);
-        return stub.fetch(request);
+        return env.KONTAK.get(id).fetch(request);
       }
 
-      // Serve assets directly without rewrite
       if (env.ASSETS) {
         const res = await env.ASSETS.fetch(request);
-        if (res.status !== 404) return res;
+        if (res.status !== 404) {
+          const path = url.pathname;
+          const dynamic = path === "/" || /\.(html|js|css)$/.test(path);
+          if (!dynamic) return res;
+          const headers = new Headers(res.headers);
+          headers.set("Cache-Control", "no-cache");
+          return new Response(res.body, { status: res.status, headers });
+        }
       }
 
       return new Response("Not found", { status: 404 });

@@ -7,42 +7,43 @@
 <meta name="description" content="Messagerie temps réel et appels vidéo pour la communauté haïtienne">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
 <div id="topbar">
   <div id="logo">Kon<span>tak</span></div>
   <div class="sp"></div>
-  <button id="satBtn" class="ghost">SAT: OFF</button>
-  <button id="turnBtn" class="ghost">TURN</button>
-  <button id="langBtn" class="ghost">FR</button>
-  <button id="contrastBtn" class="ghost">Aa</button>
-  <button id="installBtn" class="ghost" hidden>Telechaje</button>
-  <button id="logoutBtn" class="ghost" hidden>Soti</button>
+  <button id="satBtn" class="ghost" type="button">SAT: OFF</button>
+  <button id="turnBtn" class="ghost" type="button">TURN</button>
+  <button id="langBtn" class="ghost" type="button">FR</button>
+  <button id="contrastBtn" class="ghost" type="button">Aa</button>
+  <button id="installBtn" class="ghost" type="button" hidden>Telechaje</button>
+  <button id="logoutBtn" class="ghost" type="button" hidden>Soti</button>
 </div>
 <div id="connBar">Ap konekte…</div>
 <div id="app">
   <div id="authView" class="card">
     <div id="authTabs">
-      <button id="tabLogin" class="grow">Konekte</button>
-      <button id="tabReg" class="ghost grow">Kreye kont</button>
+      <button id="tabLogin" class="grow" type="button">Konekte</button>
+      <button id="tabReg" class="ghost grow" type="button">Kreye kont</button>
     </div>
     <div id="loginForm">
       <label>Nimewo telefòn</label>
-      <input id="loginPhoneInput" placeholder="+XXXXXXXXXXXX" inputmode="tel">
+      <input id="loginPhoneInput" placeholder="50937123456" inputmode="tel" autocomplete="tel">
       <label>Modpas</label>
-      <input id="loginPassInput" type="password" placeholder="••••••">
-      <button id="loginBtn" class="grow" style="margin-top:12px;width:100%">Konekte</button>
+      <input id="loginPassInput" type="password" placeholder="••••••" autocomplete="current-password">
+      <button id="loginBtn" class="grow" type="button" style="margin-top:12px;width:100%">Konekte</button>
     </div>
     <div id="regForm" hidden>
       <label>Non</label>
-      <input id="regNameInput" placeholder="Non ou">
+      <input id="regNameInput" placeholder="Non ou" autocomplete="name">
       <label>Nimewo telefòn</label>
-      <input id="regPhoneInput" placeholder="+XXXXXXXXXXXX" inputmode="tel">
+      <input id="regPhoneInput" placeholder="50937123456" inputmode="tel" autocomplete="tel">
       <label>Modpas</label>
-      <input id="regPassInput" type="password" placeholder="omwen 4 karaktè">
-      <button id="regBtn" class="grow" style="margin-top:12px;width:100%">Kreye kont</button>
+      <input id="regPassInput" type="password" placeholder="omwen 4 karaktè" autocomplete="new-password">
+      <button id="regBtn" class="grow" type="button" style="margin-top:12px;width:100%">Kreye kont</button>
     </div>
+    <p id="authError" class="hint" style="color:var(--warn);min-height:1.2em"></p>
   </div>
 
   <div id="mainView" hidden>
@@ -56,27 +57,26 @@
       </div>
       <div id="chatPane">
         <div id="chatHead" class="row" style="padding:10px;border-bottom:1px solid var(--line)">
-          <button id="backBtn" class="ghost mobile-only" style="display:none">←</button>
           <div class="grow">
             <b id="chatName">—</b>
             <span id="chatOnline" class="dot"></span>
             <div id="chatSub" class="small">—</div>
           </div>
-          <button id="audioBtn" class="ghost">Apèl odyo</button>
-          <button id="callBtn">Apèl videyo</button>
+          <button id="audioBtn" class="ghost" type="button">Apèl odyo</button>
+          <button id="callBtn" type="button">Apèl videyo</button>
         </div>
         <div id="typingEl" class="small" style="padding:0 12px;height:18px"></div>
         <div id="msgs"></div>
         <div id="composer">
           <input id="msgInput" placeholder="Ekri mesaj…" class="grow" maxlength="2000">
-          <button id="sendBtn">Voye</button>
+          <button id="sendBtn" type="button">Voye</button>
         </div>
       </div>
     </div>
     <p class="hint" style="margin:12px">
-  Mode <b>SAT</b> : appels audio uniquement (~16 kbps) pou rézo très fèb (satelit, 2G, zòn Ayiti).<br>
-  Vidéo nòmal limite a 320×180 / 10 fps / ~150 kbps. TURN rekòmande sou mobil.
-</p>
+      Mode <b>SAT</b> : apèl odyo sèlman (~16 kbps) pou rezo fèb (satelit, 2G).<br>
+      Videyo nòmal: 320×180 / 10 fps. TURN rekòmande sou mobil.
+    </p>
   </div>
 
   <div id="turnModal" class="card" hidden>
@@ -86,8 +86,8 @@
     <label>User</label><input id="turnUserInput" placeholder="kontak">
     <label>Pass</label><input id="turnPassInput" type="password" placeholder="••••••">
     <div class="row" style="margin-top:10px">
-      <button id="turnSaveBtn" class="grow">Sove</button>
-      <button id="turnCloseBtn" class="ghost">Fèmen</button>
+      <button id="turnSaveBtn" class="grow" type="button">Sove</button>
+      <button id="turnCloseBtn" class="ghost" type="button">Fèmen</button>
     </div>
   </div>
 </div>
@@ -99,9 +99,9 @@
   </div>
   <div id="callStat" class="small">Apèl…</div>
   <div class="row">
-    <button id="muteBtn" class="ghost">Mikwo: ON</button>
-    <button id="camBtn" class="ghost">Kamera: ON</button>
-    <button id="hangBtn" class="danger">Rakwoche</button>
+    <button id="muteBtn" class="ghost" type="button">Mikwo: ON</button>
+    <button id="camBtn" class="ghost" type="button">Kamera: ON</button>
+    <button id="hangBtn" class="danger" type="button">Rakwoche</button>
   </div>
 </div>
 
@@ -110,17 +110,17 @@
     <h3 style="margin:0">Apèl k ap antre…</h3>
     <p id="incomingFrom">—</p>
     <div class="row">
-      <button id="acceptBtn" class="grow">Asepte</button>
-      <button id="declineBtn" class="danger">Refize</button>
+      <button id="acceptBtn" class="grow" type="button">Asepte</button>
+      <button id="declineBtn" class="danger" type="button">Refize</button>
     </div>
   </div>
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=5"></script>
 <script>
 let deferredPrompt = null;
-window.addEventListener("beforeinstallprompt", e => {
+window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
   const btn = document.getElementById("installBtn");
@@ -129,21 +129,13 @@ window.addEventListener("beforeinstallprompt", e => {
 document.getElementById("installBtn").onclick = async () => {
   if (!deferredPrompt) return;
   deferredPrompt.prompt();
-  const choice = await deferredPrompt.userChoice;
+  await deferredPrompt.userChoice;
   deferredPrompt = null;
   document.getElementById("installBtn").hidden = true;
-  if (choice && choice.outcome === "accepted") {
-    const t = document.getElementById("toast");
-    t.textContent = "Kontak enstale !";
-    t.hidden = false;
-    setTimeout(() => t.hidden = true, 3000);
-  }
 };
-window.addEventListener("appinstalled", () => {
-  deferredPrompt = null;
-  const btn = document.getElementById("installBtn");
-  if (btn) btn.hidden = true;
-});
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js?v=5");
+}
 </script>
 </body>
 </html>
