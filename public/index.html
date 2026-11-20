@@ -118,8 +118,8 @@ label{font-size:13px;color:var(--mut);display:block;margin:8px 0 4px}
       </div>
     </div>
     <p class="hint" style="margin:12px">
-  Mode <b>SAT</b> : appels audio uniquement (~16 kbps) pour réseaux très faibles (satellite, 2G, zones Haïti).<br>
-  Vidéo normale limitée à 320×180 / 10 fps / ~150 kbps. TURN recommandé sur mobile.
+  Mode <b>SAT</b> : appels audio uniquement (~16 kbps) pou rézo très fèb (satelit, 2G, zòn Ayiti).<br>
+  Vidéo nòmal limite a 320×180 / 10 fps / ~150 kbps. TURN rekòmande sou mobil.
 </p>
   </div>
 
@@ -168,7 +168,7 @@ const $ = id => document.getElementById(id);
 const STR = {
   kr: {connecting:"Ap konekte…",connected:"Konekte",offline:"Dekonekte",login:"Konekte",register:"Kreye kont",send:"Voye",type:"Ekri mesaj…",search:"Chache non oswa nimewo…",welcome:"Byenveni",typing:"ap ekri…",online:"anliy",offline2:"pa anliy",call:"Apèl videyo",audio:"Apèl odyo"},
   fr: {connecting:"Connexion…",connected:"Connecté",offline:"Déconnecté",login:"Se connecter",register:"Créer un compte",send:"Envoyer",type:"Écrire un message…",search:"Rechercher nom ou numéro…",welcome:"Bienvenue",typing:"écrit…",online:"en ligne",offline2:"hors ligne",call:"Appel vidéo",audio:"Appel audio"}
-};
+);
 let lang = localStorage.getItem("kontak_lang") || "kr";
 const T = k => (STR[lang]&&STR[lang][k])||STR.kr[k]||k;
 const L = (kr,fr) => lang==="fr"?fr:kr;
@@ -185,7 +185,6 @@ function applyLang(){
 $("langBtn").onclick=()=>{ lang=lang==="kr"?"fr":"kr"; localStorage.setItem("kontak_lang",lang); applyLang(); };
 applyLang();
 
-// Auth tabs
 $("tabLogin").onclick=()=>{ $("loginForm").hidden=false; $("regForm").hidden=true; $("tabLogin").className="grow"; $("tabReg").className="ghost grow"; };
 $("tabReg").onclick=()=>{ $("loginForm").hidden=true; $("regForm").hidden=false; $("tabReg").className="grow"; $("tabLogin").className="ghost grow"; };
 
@@ -197,14 +196,14 @@ function setBar(txt, bad){ $("connBar").textContent=txt; $("connBar").style.bord
 function connect(){
   setBar(T("connecting"));
   const proto = location.protocol==="https:"?"wss:":"ws:";
-  ws = new WebSocket((location.protocol==="https:"?"wss:":"ws:")+"//"+location.host+"/ws");
+  ws = new WebSocket(proto+"//"+location.host+"/ws");
   ws.onopen = ()=>{
     setBar(T("connected"));
     const phone=localStorage.getItem("kontak_phone"), pass=localStorage.getItem("kontak_pass");
     if(phone&&pass) send({type:"login",phone,password:pass});
     else showAuth();
   };
-  ws.onmessage = e => onMsg(JSON.parse(e.data));
+  ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch(err){ console.error(err); } };
   ws.onclose = ()=>{ setBar(T("offline"),true); me=null; showAuth(true); setTimeout(connect,2000); };
   ws.onerror = ()=>{};
 }
@@ -212,12 +211,8 @@ function connect(){
 function send(obj){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(obj)); }
 
 function onMsg(o){
-  if(o.type==="auth-ok"){ 
-    me=o.user; 
-    localStorage.setItem("kontak_phone",me.phone); 
-    // Mot de passe déjà sauvé au clic (pour reconnexion auto)
-    afterAuth(); 
-  }
+  if(!o||!o.type) return;
+  if(o.type==="auth-ok"){ me=o.user; localStorage.setItem("kontak_phone",me.phone); afterAuth(); }
   else if(o.type==="error") toast(o.error);
   else if(o.type==="search-results") renderSearch(o.results);
   else if(o.type==="conversations") renderConvs(o.list);
@@ -232,7 +227,7 @@ function onMsg(o){
   else if(o.type==="presence") onPresence(o);
 }
 
-function showAuth(keep){ $("authView").hidden=false; $("mainView").hidden=true; $("logoutBtn").hidden=true; }
+function showAuth(){ $("authView").hidden=false; $("mainView").hidden=true; $("logoutBtn").hidden=true; }
 function afterAuth(){
   $("authView").hidden=true; $("mainView").hidden=false; $("logoutBtn").hidden=false;
   toast(T("welcome")+" "+me.name+"!");
@@ -240,19 +235,10 @@ function afterAuth(){
   flushOutbox();
 }
 
-$("loginBtn").onclick=()=>{ 
-  const p = $("loginPassInput").value;
-  localStorage.setItem("kontak_pass", p); 
-  send({type:"login",phone:$("loginPhoneInput").value,password:p}); 
-};
-$("regBtn").onclick=()=>{ 
-  const p = $("regPassInput").value;
-  localStorage.setItem("kontak_pass", p); 
-  send({type:"register",name:$("regNameInput").value,phone:$("regPhoneInput").value,password:p}); 
-};
+$("loginBtn").onclick=()=>{ const p=$("loginPassInput").value; localStorage.setItem("kontak_pass",p); send({type:"login",phone:$("loginPhoneInput").value,password:p}); };
+$("regBtn").onclick=()=>{ const p=$("regPassInput").value; localStorage.setItem("kontak_pass",p); send({type:"register",name:$("regNameInput").value,phone:$("regPhoneInput").value,password:p}); };
 $("logoutBtn").onclick=()=>{ localStorage.removeItem("kontak_phone"); localStorage.removeItem("kontak_pass"); location.reload(); };
 
-// Search
 let searchTimer;
 $("searchInput").oninput=()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(()=>{
   const q=$("searchInput").value.trim();
@@ -325,8 +311,8 @@ function onPresence(o){
 function onTyping(o){
   if(o.convId===currentConv){
     $("typingEl").textContent=o.fromName+" "+T("typing");
-    clearTimeout($("typingEl")._t);
-    $("typingEl")._t=setTimeout(()=>$("typingEl").textContent="",1500);
+    clearTimeout($("typingEl").__t);
+    $("typingEl").__t=setTimeout(()=>$("typingEl").textContent="",1500);
   }
 }
 
@@ -357,7 +343,6 @@ function flushOutbox(){
 }
 window.addEventListener("online",flushOutbox);
 
-// SAT mode
 function satOn(){ return localStorage.getItem("kontak_sat")==="1"; }
 $("satBtn").textContent=satOn()?"SAT: ON":"SAT: OFF";
 $("satBtn").onclick=()=>{
@@ -365,15 +350,14 @@ $("satBtn").onclick=()=>{
   localStorage.setItem("kontak_sat",on?"1":"0");
   $("satBtn").textContent=on?"SAT: ON":"SAT: OFF";
   toast(on?"Mòd SAT: odyo ~16 kbps (rezo fèb)":"Mòd nòmal");
-};
+);
 
-// TURN
 $("turnBtn").onclick=()=>{
   $("turnUrlInput").value=localStorage.getItem("kontak_turn_url")||"";
   $("turnUserInput").value=localStorage.getItem("kontak_turn_user")||"";
   $("turnPassInput").value=localStorage.getItem("kontak_turn_pass")||"";
   $("turnModal").hidden=false;
-};
+);
 $("turnCloseBtn").onclick=()=>$("turnModal").hidden=true;
 $("turnSaveBtn").onclick=()=>{
   localStorage.setItem("kontak_turn_url",$("turnUrlInput").value.trim());
@@ -381,7 +365,7 @@ $("turnSaveBtn").onclick=()=>{
   localStorage.setItem("kontak_turn_pass",$("turnPassInput").value.trim());
   $("turnModal").hidden=true;
   toast("TURN sove");
-};
+);
 
 function iceServers(){
   const servers=[{urls:"stun:stun.l.google.com:19302"}];
@@ -390,7 +374,6 @@ function iceServers(){
   return servers;
 }
 
-// WebRTC
 let pc=null, localStream=null, callConv=null, pendingOffer=null, iceQueue=[];
 
 function flushIce(){
@@ -403,146 +386,111 @@ function flushIce(){
 
 async function startCall(audioOnly){
   if(!currentConv||!currentPeer) return toast("Chwazi yon konvèsasyon");
+  if(pc) return;
   callConv=currentConv;
   const forceAudio = audioOnly || satOn();
   $("videoOverlay").hidden=false;
   $("callStat").textContent=forceAudio ? "Ap rele (odyo / SAT)…" : "Ap rele…";
   try{
     const constraints = forceAudio
-      ? { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }
-      : { video: { width: { ideal: 320 }, height: { ideal: 180 }, frameRate: { ideal: 10, max: 15 } }, audio: true };
+      ? { audio: { echoCancellation: true, noiseSuppression: true }, video: false }
+      : { audio: { echoCancellation: true, noiseSuppression: true }, video: { width: { ideal: 320 }, height: { ideal: 180 }, frameRate: { ideal: 10 } } };
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    $("localVid").srcObject = localStream;
+    if(!forceAudio){ const lv=$("localVid"); lv.srcObject=localStream; lv.muted=true; }
+    else { const lv=$("localVid"); lv.srcObject=null; }
     pc = new RTCPeerConnection({ iceServers: iceServers() });
-    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-    // Limite de débit pour réseaux faibles
-    pc.getSenders().forEach(async sender => {
-      const params = sender.getParameters();
-      if (!params.encodings) params.encodings = [{}];
-      if (sender.track && sender.track.kind === "audio") {
-        params.encodings[0].maxBitrate = forceAudio ? 16000 : 32000; // 16 kbps en SAT
-      } else if (sender.track && sender.track.kind === "video") {
-        params.encodings[0].maxBitrate = 150000; // 150 kbps max
-        params.encodings[0].maxFramerate = 10;
-      }
-      try { await sender.setParameters(params); } catch(e){}
-    });
-    pc.ontrack = e => { $("remoteVid").srcObject = e.streams[0]; };
-    pc.onicecandidate = e => { if(e.candidate) send({type:"callIce", convId:callConv, candidate:JSON.stringify(e.candidate)}); };
+    localStream.getTracks().forEach(t=>pc.addTrack(t, localStream));
+    pc.onicecandidate = e => { if(e.candidate) send({type:"callIce",convId:callConv,candidate:JSON.stringify(e.candidate)}); };
+    pc.ontrack = e => { const rv=$("remoteVid"); if(rv.srcObject!==e.streams[0]) rv.srcObject=e.streams[0]; };
     pc.onconnectionstatechange = () => {
-      if(pc && (pc.connectionState==="failed"||pc.connectionState==="disconnected")) $("callStat").textContent="Connexion perdue";
-      if(pc && pc.connectionState==="connected") $("callStat").textContent = forceAudio ? "Nan apèl odyo (SAT)" : "Nan apèl…";
+      if(pc.connectionState==="connected") $("callStat").textContent="Konekte";
+      else if(pc.connectionState==="failed"||pc.connectionState==="disconnected") { toast("Apèl echwe"); endCall(); }
     };
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    send({type:"callOffer", convId:callConv, sdp:JSON.stringify(offer), audioOnly:forceAudio});
-  }catch(e){ toast("Kamera/mikwo refize"); endCall(); }
+    send({type:"callOffer",convId:callConv,peerId:currentPeer.id,sdp:JSON.stringify(offer),audioOnly:forceAudio});
+  }catch(e){ toast("Mikwo/Kamera pa disponib: "+e.message); endCall(); }
 }
-
-$("callBtn").onclick=()=>startCall(false);
-$("audioBtn").onclick=()=>startCall(true);
 
 function onIncomingCall(o){
-  if(!me || o.from === me.id) return; // ignore own calls
+  if(pc){ send({type:"callDecline",convId:o.convId}); return; }
   pendingOffer=o;
-  $("incomingFrom").textContent=(o.fromName||"Moun")+" ap rele…";
+  callConv=o.convId;
+  const fromName = (currentPeer&&currentPeer.id===o.from)?currentPeer.name:"Kontak";
+  $("incomingFrom").textContent=fromName;
   $("incoming").hidden=false;
 }
+
 $("acceptBtn").onclick=async()=>{
-  $("incoming").hidden=true;
-  const o=pendingOffer; pendingOffer=null;
+  const o=pendingOffer; pendingOffer=null; $("incoming").hidden=true;
   if(!o) return;
-  callConv=o.convId;
-  const forceAudio = o.audioOnly || satOn();
+  const forceAudio = !!o.audioOnly || satOn();
   $("videoOverlay").hidden=false;
-  $("callStat").textContent=forceAudio ? "Apèl odyo (SAT)…" : "Apèl…";
+  $("callStat").textContent=forceAudio?"Ap reponn (odyo / SAT)…":"Ap reponn…";
   try{
     const constraints = forceAudio
-      ? { audio: { echoCancellation: true, noiseSuppression: true } }
-      : { video: { width: { ideal: 320 }, height: { ideal: 180 }, frameRate: { max: 15 } }, audio: true };
+      ? { audio: { echoCancellation: true, noiseSuppression: true }, video: false }
+      : { audio: { echoCancellation: true, noiseSuppression: true }, video: { width: { ideal: 320 }, height: { ideal: 180 }, frameRate: { ideal: 10 } } };
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    $("localVid").srcObject = localStream;
+    if(!forceAudio){ const lv=$("localVid"); lv.srcObject=localStream; lv.muted=true; }
     pc = new RTCPeerConnection({ iceServers: iceServers() });
-    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-    pc.getSenders().forEach(async sender => {
-      const params = sender.getParameters();
-      if (!params.encodings) params.encodings = [{}];
-      if (sender.track && sender.track.kind === "audio") {
-        params.encodings[0].maxBitrate = forceAudio ? 16000 : 32000;
-      } else if (sender.track && sender.track.kind === "video") {
-        params.encodings[0].maxBitrate = 150000;
-        params.encodings[0].maxFramerate = 10;
-      }
-      try { await sender.setParameters(params); } catch(e){}
-    });
-    pc.ontrack = e => { $("remoteVid").srcObject = e.streams[0]; };
-    pc.onicecandidate = e => { if(e.candidate) send({type:"callIce", convId:callConv, candidate:JSON.stringify(e.candidate)}); };
+    localStream.getTracks().forEach(t=>pc.addTrack(t, localStream));
+    pc.onicecandidate = e => { if(e.candidate) send({type:"callIce",convId:callConv,candidate:JSON.stringify(e.candidate)}); };
+    pc.ontrack = e => { const rv=$("remoteVid"); if(rv.srcObject!==e.streams[0]) rv.srcObject=e.streams[0]; };
     pc.onconnectionstatechange = () => {
-      if(pc && (pc.connectionState==="failed"||pc.connectionState==="disconnected")) $("callStat").textContent="Connexion perdue";
-      if(pc && pc.connectionState==="connected") $("callStat").textContent = forceAudio ? "Nan apèl odyo (SAT)" : "Nan apèl…";
+      if(pc.connectionState==="connected") $("callStat").textContent="Konekte";
+      else if(pc.connectionState==="failed"||pc.connectionState==="disconnected") { toast("Apèl echwe"); endCall(); }
     };
     await pc.setRemoteDescription(JSON.parse(o.sdp));
     flushIce();
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    send({type:"callAnswer", convId:callConv, sdp:JSON.stringify(answer)});
-  }catch(e){ toast("Echèk apèl"); endCall(); }
-};
-$("declineBtn").onclick=()=>{ send({type:"callDecline",convId:pendingOffer.convId}); pendingOffer=null; $("incoming").hidden=true; };
+    send({type:"callAnswer",convId:callConv,peerId:o.from,sdp:JSON.stringify(answer)});
+  }catch(e){ toast("Mikwo/Kamera pa disponib: "+e.message); endCall(); }
+);
+
+$("declineBtn").onclick=()=>{ if(pendingOffer){ send({type:"callDecline",convId:pendingOffer.convId,peerId:pendingOffer.from}); pendingOffer=null; } $("incoming").hidden=true; };
 
 async function onCallAnswer(o){
-  if(pc){
-    await pc.setRemoteDescription(JSON.parse(o.sdp));
-    flushIce();
-    $("callStat").textContent="Nan apèl…";
-  }
+  if(!pc) return;
+  try{ await pc.setRemoteDescription(JSON.parse(o.sdp)); flushIce(); }catch(e){ console.error(e); }
 }
+
 async function onRemoteIce(o){
   if(!o.candidate) return;
-  const cand = JSON.parse(o.candidate);
-  if(pc && pc.remoteDescription){
-    try{ await pc.addIceCandidate(cand); }catch(e){}
-  } else {
-    iceQueue.push(cand);
-  }
+  try{
+    const c = new RTCIceCandidate(JSON.parse(o.candidate));
+    if(!pc || !pc.remoteDescription){ iceQueue.push(c); return; }
+    await pc.addIceCandidate(c);
+  }catch(e){ console.error(e); }
 }
 
 function endCall(){
-  iceQueue=[];
-  if(pc){ pc.close(); pc=null; }
+  if(pc){ try{ pc.close(); }catch(e){} pc=null; }
   if(localStream){ localStream.getTracks().forEach(t=>t.stop()); localStream=null; }
+  const lv=$("localVid"); lv.srcObject=null;
+  const rv=$("remoteVid"); rv.srcObject=null;
   $("videoOverlay").hidden=true;
-  $("incoming").hidden=true;
-  $("remoteVid").srcObject=null;
-  $("localVid").srcObject=null;
-  if(callConv) send({type:"callHangup",convId:callConv});
-  callConv=null;
+  callConv=null; iceQueue=[];
 }
-$("hangBtn").onclick=endCall;
+
+$("hangBtn").onclick=()=>{ if(callConv) send({type:"callHangup",convId:callConv,peerId:currentPeer&&currentPeer.id}); endCall(); };
 $("muteBtn").onclick=()=>{
   if(!localStream) return;
-  const a=localStream.getAudioTracks()[0];
-  if(a){ a.enabled=!a.enabled; $("muteBtn").textContent="Mikwo: "+(a.enabled?"ON":"OFF"); }
-};
+  const t=localStream.getAudioTracks()[0]; if(!t) return;
+  t.enabled=!t.enabled; $("muteBtn").textContent="Mikwo: "+(t.enabled?"ON":"OFF");
+);
 $("camBtn").onclick=()=>{
   if(!localStream) return;
-  const v=localStream.getVideoTracks()[0];
-  if(v){ v.enabled=!v.enabled; $("camBtn").textContent="Kamera: "+(v.enabled?"ON":"OFF"); }
-};
+  const t=localStream.getVideoTracks()[0]; if(!t) return;
+  t.enabled=!t.enabled; $("camBtn").textContent="Kamera: "+(t.enabled?"ON":"OFF");
+);
 
-// Auto SAT on low data
-try{
-  if(localStorage.getItem("kontak_sat")===null){
-    const nc=navigator.connection;
-    if(nc&&(nc.saveData||nc.effectiveType==="slow-2g"||nc.effectiveType==="2g")) localStorage.setItem("kontak_sat","1");
-  }
-}catch(e){}
+$("callBtn").onclick=()=>startCall(false);
+$("audioBtn").onclick=()=>startCall(true);
 
 connect();
-if("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
-setInterval(()=>{ if(me) send({type:"tick"}); },60000);
 })();
 </script>
 </body>
 </html>
-<!-- deploy 1794977221 -->
