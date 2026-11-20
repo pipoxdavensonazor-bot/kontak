@@ -207,14 +207,14 @@ window.addEventListener("online",flushOutbox);
 
 function satOn(){ return localStorage.getItem("kontak_sat")==="1"; }
 $("satBtn").textContent=satOn()?"SAT: ON":"SAT: OFF";
-$("satBtn").onclick=()=>{
+$("satBtn").onclick=()=>}
   const on=!satOn();
   localStorage.setItem("kontak_sat",on?"1":"0");
   $("satBtn").textContent=on?"SAT: ON":"SAT: OFF";
   toast(on?"Mòd SAT: odyo ~16 kbps (rezo fèb)":"Mòd nòmal");
 );
 
-$("turnBtn").onclick=()=>{
+$("turnBtn").onclick=()=>}
   $("turnUrlInput").value=localStorage.getItem("kontak_turn_url")||"";
   $("turnUserInput").value=localStorage.getItem("kontak_turn_user")||"";
   $("turnPassInput").value=localStorage.getItem("kontak_turn_pass")||"";
