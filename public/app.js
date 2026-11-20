@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v6";
+  const BUILD = "v7";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -356,6 +356,7 @@
     toast(on ? "Mòd SAT: odyo ~16 kbps" : "Mòd nòmal");
   };
 
+  $("turnBtn").textContent = "TURN: ON";
   $("turnBtn").onclick = () => {
     $("turnUrlInput").value = localStorage.getItem("kontak_turn_url") || "";
     $("turnUserInput").value = localStorage.getItem("kontak_turn_user") || "";
@@ -371,8 +372,18 @@
     toast("TURN sove");
   };
 
-  function iceServers() {
-    const servers = [{ urls: "stun:stun.l.google.com:19302" }];
+  let iceCache = null;
+  async function iceServers() {
+    if (!iceCache || iceCache.exp < Date.now()) {
+      try {
+        const res = await fetch("/turn");
+        const data = await res.json();
+        iceCache = { exp: Date.now() + 6 * 3600 * 1000, servers: data.iceServers || [] };
+      } catch {
+        iceCache = { exp: Date.now() + 60 * 1000, servers: [{ urls: "stun:stun.cloudflare.com:3478" }] };
+      }
+    }
+    const servers = iceCache.servers.slice();
     const url = localStorage.getItem("kontak_turn_url");
     if (url) servers.push({ urls: url, username: localStorage.getItem("kontak_turn_user") || "", credential: localStorage.getItem("kontak_turn_pass") || "" });
     return servers;
@@ -437,8 +448,8 @@
     } catch {}
   }
 
-  function wirePc() {
-    pc = new RTCPeerConnection({ iceServers: iceServers() });
+  async function wirePc() {
+    pc = new RTCPeerConnection({ iceServers: await iceServers() });
     localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
     pc.onicecandidate = (e) => {
       if (e.candidate) send({ type: "callIce", convId: callConv, candidate: e.candidate.toJSON() });
@@ -472,7 +483,7 @@
       const hasVideo = localStream.getVideoTracks().length > 0;
       attachVideo("localVid", localStream);
       $("callStat").textContent = hasVideo ? "Ap rele an videyo…" : "Ap rele an odyo…";
-      wirePc();
+      await wirePc();
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       await limitVideoBitrate();
@@ -513,7 +524,7 @@
       localStream = await openMedia(wantVideo);
       attachVideo("localVid", localStream);
       $("callStat").textContent = "Ap reponn…";
-      wirePc();
+      await wirePc();
       await pc.setRemoteDescription(new RTCSessionDescription(o.offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);

@@ -7,7 +7,7 @@
 <meta name="description" content="Messagerie temps réel et appels vidéo pour la communauté haïtienne">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 <div id="topbar">
@@ -117,7 +117,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 <script>
 let deferredPrompt = null;
 window.addEventListener("beforeinstallprompt", (e) => {
@@ -134,7 +134,7 @@ document.getElementById("installBtn").onclick = async () => {
   document.getElementById("installBtn").hidden = true;
 };
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=6");
+  navigator.serviceWorker.register("/sw.js?v=7");
 }
 </script>
 </body>
