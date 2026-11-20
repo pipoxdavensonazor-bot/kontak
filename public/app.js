@@ -4,7 +4,7 @@ const $ = id => document.getElementById(id);
 const STR = {
   kr: {connecting:"Ap konekte…",connected:"Konekte",offline:"Dekonekte",login:"Konekte",register:"Kreye kont",send:"Voye",type:"Ekri mesaj…",search:"Chache non oswa nimewo…",welcome:"Byenveni",typing:"ap ekri…",online:"anliy",offline2:"pa anliy",call:"Apèl videyo",audio:"Apèl odyo",loading:"Tann…"},
   fr: {connecting:"Connexion…",connected:"Connecté",offline:"Déconnecté",login:"Se connecter",register:"Créer un compte",send:"Envoyer",type:"Écrire un message…",search:"Rechercher nom ou numéro…",welcome:"Bienvenue",typing:"écrit…",online:"en ligne",offline2:"hors ligne",call:"Appel vidéo",audio:"Appel audio",loading:"Attente…"}
-);
+};
 let lang = localStorage.getItem("kontak_lang") || "kr";
 const T = k => (STR[lang]&&STR[lang][k])||STR.kr[k]||k;
 
@@ -207,19 +207,19 @@ window.addEventListener("online",flushOutbox);
 
 function satOn(){ return localStorage.getItem("kontak_sat")==="1"; }
 $("satBtn").textContent=satOn()?"SAT: ON":"SAT: OFF";
-$("satBtn").onclick=()=>}
+$("satBtn").onclick=()=>{
   const on=!satOn();
   localStorage.setItem("kontak_sat",on?"1":"0");
   $("satBtn").textContent=on?"SAT: ON":"SAT: OFF";
   toast(on?"Mòd SAT: odyo ~16 kbps (rezo fèb)":"Mòd nòmal");
-);
+};
 
-$("turnBtn").onclick=()=>}
+$("turnBtn").onclick=()=>{
   $("turnUrlInput").value=localStorage.getItem("kontak_turn_url")||"";
   $("turnUserInput").value=localStorage.getItem("kontak_turn_user")||"";
   $("turnPassInput").value=localStorage.getItem("kontak_turn_pass")||"";
   $("turnModal").hidden=false;
-);
+};
 $("turnCloseBtn").onclick=()=>$("turnModal").hidden=true;
 $("turnSaveBtn").onclick=()=>{
   localStorage.setItem("kontak_turn_url",$("turnUrlInput").value.trim());
@@ -227,7 +227,7 @@ $("turnSaveBtn").onclick=()=>{
   localStorage.setItem("kontak_turn_pass",$("turnPassInput").value.trim());
   $("turnModal").hidden=true;
   toast("TURN sove");
-);
+};
 
 function iceServers(){
   const servers=[{urls:"stun:stun.l.google.com:19302"}];
@@ -314,12 +314,12 @@ $("acceptBtn").onclick=async()=>{
     toast("Mikwo/kamera pa disponib");
     endCall();
   }
-);
+};
 
 $("declineBtn").onclick=()=>{
   if(pendingOffer){ send({type:"callDecline",convId:pendingOffer.convId}); pendingOffer=null; }
   $("incoming").hidden=true;
-);
+};
 
 function onCallAnswer(o){
   if(!pc) return;
@@ -347,13 +347,13 @@ $("muteBtn").onclick=()=>{
   const t=localStream.getAudioTracks()[0]; if(!t) return;
   t.enabled=!t.enabled;
   $("muteBtn").textContent=t.enabled?"Mikwo: ON":"Mikwo: OFF";
-);
+};
 $("camBtn").onclick=()=>{
   if(!localStream) return;
   const t=localStream.getVideoTracks()[0]; if(!t) return;
   t.enabled=!t.enabled;
   $("camBtn").textContent=t.enabled?"Kamera: ON":"Kamera: OFF";
-);
+};
 
 $("callBtn").onclick=()=>startCall(false);
 $("audioBtn").onclick=()=>startCall(true);
