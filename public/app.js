@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v5";
+  const BUILD = "v6";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -385,10 +385,56 @@
     while (iceQueue.length) pc.addIceCandidate(iceQueue.shift()).catch(() => {});
   }
 
-  function mediaConstraints(forceAudio) {
-    return forceAudio
-      ? { audio: { echoCancellation: true, noiseSuppression: true }, video: false }
-      : { audio: { echoCancellation: true, noiseSuppression: true }, video: { width: { ideal: 320 }, height: { ideal: 180 }, frameRate: { ideal: 10 } } };
+  function mediaConstraints(wantVideo) {
+    if (!wantVideo) return { audio: true, video: false };
+    return { audio: true, video: { facingMode: "user" } };
+  }
+
+  async function openMedia(wantVideo) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("no-media");
+    }
+    if (!wantVideo) return navigator.mediaDevices.getUserMedia(mediaConstraints(false));
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints(true));
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        track.enabled = true;
+        try { track.contentHint = "detail"; } catch {}
+        await track.applyConstraints({
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 15, max: 20 }
+        }).catch(() => {});
+      }
+      return stream;
+    } catch (err) {
+      toast("Kamera bloke. Ap eseye odyo sèlman.");
+      return navigator.mediaDevices.getUserMedia(mediaConstraints(false));
+    }
+  }
+
+  function attachVideo(id, stream) {
+    const el = $(id);
+    if (!el) return;
+    el.playsInline = true;
+    el.autoplay = true;
+    if (id === "localVid") el.muted = true;
+    el.srcObject = stream || null;
+    if (stream) el.play().catch(() => {});
+  }
+
+  async function limitVideoBitrate() {
+    if (!pc) return;
+    const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+    if (!sender) return;
+    try {
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+      params.encodings[0].maxBitrate = satOn() ? 180000 : 500000;
+      params.encodings[0].maxFramerate = satOn() ? 10 : 15;
+      await sender.setParameters(params);
+    } catch {}
   }
 
   function wirePc() {
@@ -397,10 +443,19 @@
     pc.onicecandidate = (e) => {
       if (e.candidate) send({ type: "callIce", convId: callConv, candidate: e.candidate.toJSON() });
     };
-    pc.ontrack = (e) => { $("remoteVid").srcObject = e.streams[0]; };
+    pc.ontrack = (e) => {
+      let remote = $("remoteVid").srcObject;
+      if (!(remote instanceof MediaStream)) remote = new MediaStream();
+      if (!remote.getTracks().some((t) => t.id === e.track.id)) remote.addTrack(e.track);
+      attachVideo("remoteVid", remote);
+      if (e.track.kind === "video") $("callStat").textContent = "Kamera konekte";
+    };
     pc.onconnectionstatechange = () => {
       if (!pc) return;
-      if (pc.connectionState === "connected") $("callStat").textContent = "Konekte";
+      if (pc.connectionState === "connected") {
+        const hasVideo = localStream && localStream.getVideoTracks().some((t) => t.enabled);
+        $("callStat").textContent = hasVideo ? "Konekte · videyo" : "Konekte · odyo";
+      }
       if (pc.connectionState === "failed" || pc.connectionState === "disconnected") endCall();
     };
   }
@@ -409,25 +464,37 @@
     if (!currentConv || !currentPeer) return toast("Chwazi yon konvèsasyon");
     if (pc) return;
     callConv = Number(currentConv);
-    const forceAudio = audioOnly || satOn();
-    $("callStat").textContent = forceAudio ? "Ap mande mikwo…" : "Ap mande kamera…";
+    const wantVideo = !audioOnly;
+    $("videoOverlay").hidden = false;
+    $("callStat").textContent = wantVideo ? "Ap limen kamera…" : "Ap mande mikwo…";
     try {
-      localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints(forceAudio));
-      $("videoOverlay").hidden = false;
-      $("localVid").srcObject = localStream;
-      $("callStat").textContent = forceAudio ? "Ap rele (odyo)…" : "Ap rele…";
+      localStream = await openMedia(wantVideo);
+      const hasVideo = localStream.getVideoTracks().length > 0;
+      attachVideo("localVid", localStream);
+      $("callStat").textContent = hasVideo ? "Ap rele an videyo…" : "Ap rele an odyo…";
       wirePc();
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      send({ type: "callOffer", convId: callConv, offer: pc.localDescription.toJSON(), audioOnly: forceAudio });
+      await limitVideoBitrate();
+      send({ type: "callOffer", convId: callConv, offer: pc.localDescription.toJSON(), audioOnly: !hasVideo });
     } catch (err) {
-      toast("Mikwo/kamera pa disponib");
+      toast("Mikwo/kamera pa disponib. Otorize yo nan navigatè a.");
       endCall();
     }
   }
 
   function onIncomingCall(o) {
     if (!me || o.from === me.id || !o.offer) return;
+    if (pc && callConv && Number(o.convId) === Number(callConv)) {
+      pc.setRemoteDescription(new RTCSessionDescription(o.offer)).then(async () => {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await limitVideoBitrate();
+        send({ type: "callAnswer", convId: callConv, answer: pc.localDescription.toJSON() });
+        flushIce();
+      }).catch(() => {});
+      return;
+    }
     pendingOffer = o;
     $("incomingFrom").textContent = o.fromName || "Kontak";
     $("incoming").hidden = false;
@@ -439,16 +506,18 @@
     pendingOffer = null;
     $("incoming").hidden = true;
     callConv = Number(o.convId);
-    const forceAudio = !!(o.audioOnly || satOn());
+    const wantVideo = !o.audioOnly;
+    $("videoOverlay").hidden = false;
+    $("callStat").textContent = wantVideo ? "Ap limen kamera…" : "Ap reponn an odyo…";
     try {
-      localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints(forceAudio));
-      $("videoOverlay").hidden = false;
-      $("localVid").srcObject = localStream;
+      localStream = await openMedia(wantVideo);
+      attachVideo("localVid", localStream);
       $("callStat").textContent = "Ap reponn…";
       wirePc();
       await pc.setRemoteDescription(new RTCSessionDescription(o.offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+      await limitVideoBitrate();
       send({ type: "callAnswer", convId: callConv, answer: pc.localDescription.toJSON() });
       flushIce();
     } catch (err) {
@@ -495,9 +564,26 @@
     t.enabled = !t.enabled;
     $("muteBtn").textContent = t.enabled ? "Mikwo: ON" : "Mikwo: OFF";
   };
-  $("camBtn").onclick = () => {
+  $("camBtn").onclick = async () => {
     if (!localStream) return;
-    const t = localStream.getVideoTracks()[0];
+    let t = localStream.getVideoTracks()[0];
+    if (!t && pc) {
+      try {
+        const cam = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: "user" } });
+        t = cam.getVideoTracks()[0];
+        localStream.addTrack(t);
+        pc.addTrack(t, localStream);
+        attachVideo("localVid", localStream);
+        $("camBtn").textContent = "Kamera: ON";
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await limitVideoBitrate();
+        send({ type: "callOffer", convId: callConv, offer: pc.localDescription.toJSON(), audioOnly: false });
+      } catch (err) {
+        toast("Kamera pa disponib. Otorize kamera a nan navigatè a.");
+      }
+      return;
+    }
     if (!t) return;
     t.enabled = !t.enabled;
     $("camBtn").textContent = t.enabled ? "Kamera: ON" : "Kamera: OFF";
