@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v10";
+  const BUILD = "v11";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -143,9 +143,21 @@
     else if (o.type === "callDecline" || o.type === "callHangup") endCall();
     else if (o.type === "callBusy") onCallBusy();
     else if (o.type === "presence") onPresence(o);
-    else if (o.type === "profile-ok") { me = Object.assign(me || {}, o.user); toast("Foto sove"); paintMe(); }
-    else if (o.type === "messages-read") onRead(o);
+    else if (o.type === "photo") {
+      photoWait.delete(Number(o.id));
+      if (o.photo) savePh(o.id, o.photo);
+      renderConvs(convCache);
+      if (currentPeer && Number(currentPeer.id) === Number(o.id)) fillAvatar($("chatAvatar"), currentPeer);
+      paintMe();
+    }
+    else if (o.type === "profile-ok") {
+      if (o.user && o.user.photo) savePh(o.user.id, o.user.photo);
+      me = Object.assign(me || {}, o.user);
+      toast("Foto sove");
+      paintMe();
+    }
     else if (o.type === "conversations-refresh") send({ type: "getConversations" });
+    else if (o.type === "messages-read") onRead(o);
   }
 
   function connect() {
@@ -242,18 +254,29 @@
     const url = URL.createObjectURL(file);
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      const size = 96;
+      const size = 48;
       canvas.width = size;
       canvas.height = size;
       const ctx = canvas.getContext("2d");
       const s = Math.min(img.width, img.height);
       ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
       URL.revokeObjectURL(url);
-      let photo = canvas.toDataURL("image/jpeg", 0.55);
-      if (photo.length > 70000) photo = canvas.toDataURL("image/jpeg", 0.35);
+      let photo = canvas.toDataURL("image/jpeg", 0.4);
+      if (photo.length > 12000) photo = canvas.toDataURL("image/jpeg", 0.25);
       if (!send({ type: "setProfile", photo })) return toast("Pa konekte");
     };
     img.src = url;
+  };
+  $("inviteBtn").onclick = async () => {
+    const link = location.origin + "/";
+    const text = "Vin pale sou Kontak: " + link;
+    try {
+      if (navigator.share) await navigator.share({ title: "Kontak", text, url: link });
+      else throw new Error("no-share");
+    } catch {
+      try { await navigator.clipboard.writeText(text); } catch {}
+      toast("Lyen kopye");
+    }
   };
   $("groupBtn").onclick = () => { $("groupModal").hidden = false; };
   $("groupClose").onclick = () => { $("groupModal").hidden = true; };
@@ -269,7 +292,17 @@
 
   connect();
 
-  let searchTimer;
+  let convCache = [];
+  const photos = {};
+  const photoWait = new Set();
+  try { Object.assign(photos, JSON.parse(localStorage.getItem("kontak_ph") || "{}")); } catch {}
+  function savePh(id, photo) {
+    if (!id || !photo) return;
+    photos[id] = photo;
+    const keys = Object.keys(photos);
+    while (keys.length > 30) delete photos[keys.shift()];
+    try { localStorage.setItem("kontak_ph", JSON.stringify(photos)); } catch {}
+  }
   $("searchInput").oninput = () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
@@ -288,13 +321,23 @@
     return d.toLocaleDateString([], { day: "2-digit", month: "short" });
   }
   function fillAvatar(el, person) {
+    if (!el) return;
     el.innerHTML = "";
-    if (person && person.photo) {
+    const id = person && person.id;
+    if (person && person.photo) savePh(id, person.photo);
+    const src = (person && person.photo) || (id && photos[id]);
+    if (src) {
       const img = document.createElement("img");
       img.alt = "";
-      img.src = person.photo;
+      img.src = src;
       el.appendChild(img);
-    } else el.textContent = initial(person && person.name);
+      return;
+    }
+    el.textContent = initial(person && person.name);
+    if (id && person.hasPhoto && !photoWait.has(id)) {
+      photoWait.add(id);
+      send({ type: "getPhoto", id });
+    }
   }
   function paintMe() {
     const el = $("meAvatar");
@@ -332,6 +375,7 @@
   }
 
   function renderConvs(list) {
+    convCache = list || [];
     const el = $("convList");
     el.innerHTML = "";
     list.forEach((c) => {
@@ -524,9 +568,9 @@
         track.enabled = true;
         try { track.contentHint = "detail"; } catch {}
         await track.applyConstraints({
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 15, max: 20 }
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          frameRate: { ideal: 10, max: 12 }
         }).catch(() => {});
       }
       return stream;
@@ -553,8 +597,8 @@
     try {
       const params = sender.getParameters();
       if (!params.encodings || !params.encodings.length) params.encodings = [{}];
-      params.encodings[0].maxBitrate = satOn() ? 180000 : 500000;
-      params.encodings[0].maxFramerate = satOn() ? 10 : 15;
+      params.encodings[0].maxBitrate = satOn() ? 90000 : 200000;
+      params.encodings[0].maxFramerate = satOn() ? 8 : 12;
       await sender.setParameters(params);
     } catch {}
   }

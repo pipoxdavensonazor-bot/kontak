@@ -51,6 +51,7 @@ export class KontakRoom extends DurableObject {
         case "sendMessage": return await this.handleSendMessage(ws, msg);
         case "setProfile": return await this.handleSetProfile(ws, msg);
         case "createGroup": return await this.handleCreateGroup(ws, msg);
+        case "getPhoto": return await this.handleGetPhoto(ws, msg);
         case "markRead": return await this.handleMarkRead(ws, msg);
         case "typing": return await this.handleTyping(ws, msg);
         case "callOffer":
@@ -157,15 +158,17 @@ export class KontakRoom extends DurableObject {
     return this._schema;
   }
 
-  pub(user) {
+  pub(user, withPhoto) {
     if (!user) return null;
-    return {
+    const out = {
       id: user.id,
       name: user.name,
       phone: user.phone,
-      photo: user.photo || "",
-      online: this.isOnline(user.id)
+      online: this.isOnline(user.id),
+      hasPhoto: user.photo ? 1 : 0
     };
+    if (withPhoto && user.photo) out.photo = user.photo;
+    return out;
   }
 
   async memberIds(conv) {
@@ -241,7 +244,7 @@ export class KontakRoom extends DurableObject {
     return {
       id: c.id,
       isGroup: false,
-      peer: peer ? this.pub(peer) : { id: peerId, name: "?", phone: "", online: false, photo: "" },
+      peer: peer ? this.pub(peer) : { id: peerId, name: "?", phone: "", online: false, hasPhoto: 0 },
       lastAt: c.lastAt,
       lastBody: c.lastBody,
       seen
@@ -267,7 +270,7 @@ export class KontakRoom extends DurableObject {
     const hash = await this.hashPass(password, salt);
     const res = await this.db.insert(schema.users).values({ name, phone, salt, hash, createdAt: Date.now() }).returning();
 
-    const me = { id: res[0].id, name, phone, photo: "" };
+    const me = { id: res[0].id, name, phone, hasPhoto: 0 };
     this.addOnline(me.id, ws);
     this.send(ws, { type: "auth-ok", user: me });
     await this.broadcastPresence(me.id, true);
@@ -280,7 +283,7 @@ export class KontakRoom extends DurableObject {
     const hash = await this.hashPass(data.password, user.salt);
     if (hash !== user.hash) throw new Error("bad-creds");
 
-    const me = { id: user.id, name: user.name, phone: user.phone, photo: user.photo || "" };
+    const me = { id: user.id, name: user.name, phone: user.phone, hasPhoto: user.photo ? 1 : 0 };
     this.addOnline(me.id, ws);
     this.send(ws, { type: "auth-ok", user: me });
     await this.broadcastPresence(me.id, true);
@@ -384,13 +387,22 @@ export class KontakRoom extends DurableObject {
   async handleSetProfile(ws, msg) {
     const meId = this.needUser(ws);
     const photo = String(msg.photo || "");
-    if (photo && (!photo.startsWith("data:image/") || photo.length > 80000)) throw new Error("photo-big");
+    if (photo && (!photo.startsWith("data:image/") || photo.length > 14000)) throw new Error("photo-big");
     const name = String(msg.name || "").trim().slice(0, 40);
     const patch = { photo };
     if (name) patch.name = name;
     await this.db.update(schema.users).set(patch).where(eq(schema.users.id, meId));
     const user = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
-    this.send(ws, { type: "profile-ok", user: this.pub(user) });
+    this.send(ws, { type: "profile-ok", user: this.pub(user, true) });
+  }
+
+  async handleGetPhoto(ws, msg) {
+    this.needUser(ws);
+    const id = Number(msg.id);
+    if (!id) return;
+    const user = await this.db.select().from(schema.users).where(eq(schema.users.id, id)).get();
+    const photo = user && user.photo && user.photo.length <= 80000 ? user.photo : "";
+    this.send(ws, { type: "photo", id, photo });
   }
 
   async handleCreateGroup(ws, msg) {
