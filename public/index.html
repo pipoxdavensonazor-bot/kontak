@@ -16,6 +16,7 @@
   <button id="satBtn" class="ghost">SAT: OFF</button>
   <button id="turnBtn" class="ghost">TURN</button>
   <button id="langBtn" class="ghost">FR</button>
+  <button id="contrastBtn" class="ghost">Aa</button>
   <button id="installBtn" class="ghost" hidden>Telechaje</button>
   <button id="logoutBtn" class="ghost" hidden>Soti</button>
 </div>
@@ -137,7 +138,7 @@ document.getElementById("installBtn").onclick = async () => {
     t.hidden = false;
     setTimeout(() => t.hidden = true, 3000);
   }
-);
+};
 window.addEventListener("appinstalled", () => {
   deferredPrompt = null;
   const btn = document.getElementById("installBtn");
