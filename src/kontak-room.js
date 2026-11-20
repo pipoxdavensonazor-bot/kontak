@@ -137,13 +137,8 @@ export class KontakRoom extends DurableObject {
     const q = `%${String(msg.q || "").toLowerCase()}%`;
     const results = await this.db.select({ id: schema.users.id, name: schema.users.name, phone: schema.users.phone })
       .from(schema.users)
-      .where(and(
-        // id != meId
-        // simplified filter
-      ))
       .limit(20);
-    // Filter in JS for simplicity
-    const list = results.filter(u => u.id !== meId && 
+    const list = results.filter(u => u.id !== meId &&
       (u.name.toLowerCase().includes(msg.q?.toLowerCase() || "") || u.phone.includes(msg.q || "")))
       .map(u => ({ ...u, online: this.online.has(u.id) && this.online.get(u.id).size > 0 }));
     this.send(ws, { type: "search-results", results: list });
@@ -240,9 +235,16 @@ export class KontakRoom extends DurableObject {
     this.broadcastToUser(peerId, payload);
   }
 
-  handleTyping(ws, msg) {
+  async handleTyping(ws, msg) {
     const meId = this.getUserId(ws);
     if (!meId) return;
+    const convId = Number(msg.convId);
+    if (!convId) return;
+    const conv = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, convId)).get();
+    if (!conv || (conv.userA !== meId && conv.userB !== meId)) return;
+    const peerId = conv.userA === meId ? conv.userB : conv.userA;
+    const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
+    this.broadcastToUser(peerId, { type: "typing", convId, from: meId, fromName: me ? me.name : "?" });
   }
 
   async relayCall(ws, msg) {
