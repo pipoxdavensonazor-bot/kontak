@@ -2,13 +2,14 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const STR = {
-  kr: {connecting:"Ap konekte…",connected:"Konekte",offline:"Dekonekte",login:"Konekte",register:"Kreye kont",send:"Voye",type:"Ekri mesaj…",search:"Chache non oswa nimewo…",welcome:"Byenveni",typing:"ap ekri…",online:"anliy",offline2:"pa anliy",call:"Apèl videyo",audio:"Apèl odyo"},
-  fr: {connecting:"Connexion…",connected:"Connecté",offline:"Déconnecté",login:"Se connecter",register:"Créer un compte",send:"Envoyer",type:"Écrire un message…",search:"Rechercher nom ou numéro…",welcome:"Bienvenue",typing:"écrit…",online:"en ligne",offline2:"hors ligne",call:"Appel vidéo",audio:"Appel audio"}
+  kr: {connecting:"Ap konekte…",connected:"Konekte",offline:"Dekonekte",login:"Konekte",register:"Kreye kont",send:"Voye",type:"Ekri mesaj…",search:"Chache non oswa nimewo…",welcome:"Byenveni",typing:"ap ekri…",online:"anliy",offline2:"pa anliy",call:"Apèl videyo",audio:"Apèl odyo",loading:"Tann…"},
+  fr: {connecting:"Connexion…",connected:"Connecté",offline:"Déconnecté",login:"Se connecter",register:"Créer un compte",send:"Envoyer",type:"Écrire un message…",search:"Rechercher nom ou numéro…",welcome:"Bienvenue",typing:"écrit…",online:"en ligne",offline2:"hors ligne",call:"Appel vidéo",audio:"Appel audio",loading:"Attente…"}
 );
 let lang = localStorage.getItem("kontak_lang") || "kr";
 const T = k => (STR[lang]&&STR[lang][k])||STR.kr[k]||k;
 
-function toast(m){ const t=$("toast"); t.textContent=m; t.hidden=false; clearTimeout(t._t); t._t=setTimeout(()=>t.hidden=true,3500); }
+function toast(m, isErr){ const t=$("toast"); t.textContent=m; t.hidden=false; t.className=isErr?"err":""; clearTimeout(t._t); t._t=setTimeout(()=>t.hidden=true, isErr?6000:3500); }
+function setLoading(btn, on){ if(!btn) return; if(on){ btn._txt=btn.textContent; btn.textContent=T("loading"); btn.disabled=true; } else { btn.textContent=btn._txt||btn.textContent; btn.disabled=false; } }
 function applyLang(){
   $("tabLogin").textContent=T("login"); $("tabReg").textContent=T("register");
   $("loginBtn").textContent=T("login"); $("regBtn").textContent=T("register");
@@ -19,6 +20,19 @@ function applyLang(){
 }
 $("langBtn").onclick=()=>{ lang=lang==="kr"?"fr":"kr"; localStorage.setItem("kontak_lang",lang); applyLang(); };
 applyLang();
+
+// High-contrast theme
+const contrastBtn=$("contrastBtn");
+if(contrastBtn){
+  const hc=localStorage.getItem("kontak_hc")==="1";
+  if(hc) document.body.classList.add("hc");
+  contrastBtn.onclick=()=>{
+    const on=!document.body.classList.contains("hc");
+    document.body.classList.toggle("hc",on);
+    localStorage.setItem("kontak_hc",on?"1":"0");
+    toast(on?"Kontras wo aktif":"Kontras nòmal");
+  };
+}
 
 $("tabLogin").onclick=()=>{ $("loginForm").hidden=false; $("regForm").hidden=true; $("tabLogin").className="grow"; $("tabReg").className="ghost grow"; };
 $("tabReg").onclick=()=>{ $("loginForm").hidden=true; $("regForm").hidden=false; $("tabReg").className="grow"; $("tabLogin").className="ghost grow"; };
@@ -48,7 +62,7 @@ function send(obj){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(obj)); }
 function onMsg(o){
   if(!o||!o.type) return;
   if(o.type==="auth-ok"){ me=o.user; localStorage.setItem("kontak_phone",me.phone); afterAuth(); }
-  else if(o.type==="error") toast(o.error);
+  else if(o.type==="error") toast(o.error,true);
   else if(o.type==="search-results") renderSearch(o.results);
   else if(o.type==="conversations") renderConvs(o.list);
   else if(o.type==="conversation") openChat(o.id);
@@ -70,8 +84,21 @@ function afterAuth(){
   flushOutbox();
 }
 
-$("loginBtn").onclick=()=>{ const p=$("loginPassInput").value; localStorage.setItem("kontak_pass",p); send({type:"login",phone:$("loginPhoneInput").value,password:p}); };
-$("regBtn").onclick=()=>{ const p=$("regPassInput").value; localStorage.setItem("kontak_pass",p); send({type:"register",name:$("regNameInput").value,phone:$("regPhoneInput").value,password:p}); };
+$("loginBtn").onclick=()=>{
+  const p=$("loginPassInput").value; localStorage.setItem("kontak_pass",p);
+  setLoading($("loginBtn"),true);
+  send({type:"login",phone:$("loginPhoneInput").value,password:p});
+  setTimeout(()=>setLoading($("loginBtn"),false),8000);
+};
+$("regBtn").onclick=()=>{
+  const p=$("regPassInput").value;
+  let name=$("regNameInput").value.trim();
+  if(!name) name="Kontak "+($("regPhoneInput").value.replace(/\D/g,"").slice(-4)||"User");
+  localStorage.setItem("kontak_pass",p);
+  setLoading($("regBtn"),true);
+  send({type:"register",name,phone:$("regPhoneInput").value,password:p});
+  setTimeout(()=>setLoading($("regBtn"),false),8000);
+};
 $("logoutBtn").onclick=()=>{ localStorage.removeItem("kontak_phone"); localStorage.removeItem("kontak_pass"); location.reload(); };
 
 let searchTimer;
@@ -185,14 +212,14 @@ $("satBtn").onclick=()=>{
   localStorage.setItem("kontak_sat",on?"1":"0");
   $("satBtn").textContent=on?"SAT: ON":"SAT: OFF";
   toast(on?"Mòd SAT: odyo ~16 kbps (rezo fèb)":"Mòd nòmal");
-};
+);
 
 $("turnBtn").onclick=()=>{
   $("turnUrlInput").value=localStorage.getItem("kontak_turn_url")||"";
   $("turnUserInput").value=localStorage.getItem("kontak_turn_user")||"";
   $("turnPassInput").value=localStorage.getItem("kontak_turn_pass")||"";
   $("turnModal").hidden=false;
-};
+);
 $("turnCloseBtn").onclick=()=>$("turnModal").hidden=true;
 $("turnSaveBtn").onclick=()=>{
   localStorage.setItem("kontak_turn_url",$("turnUrlInput").value.trim());
@@ -200,7 +227,7 @@ $("turnSaveBtn").onclick=()=>{
   localStorage.setItem("kontak_turn_pass",$("turnPassInput").value.trim());
   $("turnModal").hidden=true;
   toast("TURN sove");
-};
+);
 
 function iceServers(){
   const servers=[{urls:"stun:stun.l.google.com:19302"}];
@@ -287,12 +314,12 @@ $("acceptBtn").onclick=async()=>{
     toast("Mikwo/kamera pa disponib");
     endCall();
   }
-};
+);
 
 $("declineBtn").onclick=()=>{
   if(pendingOffer){ send({type:"callDecline",convId:pendingOffer.convId}); pendingOffer=null; }
   $("incoming").hidden=true;
-};
+);
 
 function onCallAnswer(o){
   if(!pc) return;
@@ -320,13 +347,13 @@ $("muteBtn").onclick=()=>{
   const t=localStream.getAudioTracks()[0]; if(!t) return;
   t.enabled=!t.enabled;
   $("muteBtn").textContent=t.enabled?"Mikwo: ON":"Mikwo: OFF";
-};
+);
 $("camBtn").onclick=()=>{
   if(!localStream) return;
   const t=localStream.getVideoTracks()[0]; if(!t) return;
   t.enabled=!t.enabled;
   $("camBtn").textContent=t.enabled?"Kamera: ON":"Kamera: OFF";
-};
+);
 
 $("callBtn").onclick=()=>startCall(false);
 $("audioBtn").onclick=()=>startCall(true);
