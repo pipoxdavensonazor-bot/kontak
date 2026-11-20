@@ -28,7 +28,7 @@
     </div>
     <div id="loginForm">
       <label>Nimewo telefòn</label>
-      <input id="loginPhoneInput" placeholder="509xxxxxxxx" inputmode="tel">
+      <input id="loginPhoneInput" placeholder="+XXXXXXXXXXXX" inputmode="tel">
       <label>Modpas</label>
       <input id="loginPassInput" type="password" placeholder="••••••">
       <button id="loginBtn" class="grow" style="margin-top:12px;width:100%">Konekte</button>
@@ -37,7 +37,7 @@
       <label>Non</label>
       <input id="regNameInput" placeholder="Non ou">
       <label>Nimewo telefòn</label>
-      <input id="regPhoneInput" placeholder="509xxxxxxxx" inputmode="tel">
+      <input id="regPhoneInput" placeholder="+XXXXXXXXXXXX" inputmode="tel">
       <label>Modpas</label>
       <input id="regPassInput" type="password" placeholder="omwen 4 karaktè">
       <button id="regBtn" class="grow" style="margin-top:12px;width:100%">Kreye kont</button>
@@ -137,7 +137,7 @@ document.getElementById("installBtn").onclick = async () => {
     t.hidden = false;
     setTimeout(() => t.hidden = true, 3000);
   }
-};
+);
 window.addEventListener("appinstalled", () => {
   deferredPrompt = null;
   const btn = document.getElementById("installBtn");
