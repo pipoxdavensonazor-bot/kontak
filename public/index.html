@@ -16,6 +16,7 @@
   <button id="satBtn" class="ghost">SAT: OFF</button>
   <button id="turnBtn" class="ghost">TURN</button>
   <button id="langBtn" class="ghost">FR</button>
+  <button id="installBtn" class="ghost" hidden>Telechaje</button>
   <button id="logoutBtn" class="ghost" hidden>Soti</button>
 </div>
 <div id="connBar">Ap konekte…</div>
@@ -116,5 +117,32 @@
 <div id="toast" hidden></div>
 
 <script src="app.js"></script>
+<script>
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById("installBtn");
+  if (btn) btn.hidden = false;
+});
+document.getElementById("installBtn").onclick = async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const choice = await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  document.getElementById("installBtn").hidden = true;
+  if (choice && choice.outcome === "accepted") {
+    const t = document.getElementById("toast");
+    t.textContent = "Kontak enstale !";
+    t.hidden = false;
+    setTimeout(() => t.hidden = true, 3000);
+  }
+};
+window.addEventListener("appinstalled", () => {
+  deferredPrompt = null;
+  const btn = document.getElementById("installBtn");
+  if (btn) btn.hidden = true;
+});
+</script>
 </body>
 </html>
