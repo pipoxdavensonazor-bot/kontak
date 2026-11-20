@@ -40,6 +40,7 @@ export class KontakRoom extends DurableObject {
     }
 
     try {
+      await this.ensureSchema();
       switch (msg.type) {
         case "register": return await this.handleRegister(ws, msg);
         case "login": return await this.handleLogin(ws, msg);
@@ -48,6 +49,9 @@ export class KontakRoom extends DurableObject {
         case "getOrCreateConversation": return await this.handleGetOrCreate(ws, msg);
         case "getMessages": return await this.handleGetMessages(ws, msg);
         case "sendMessage": return await this.handleSendMessage(ws, msg);
+        case "setProfile": return await this.handleSetProfile(ws, msg);
+        case "createGroup": return await this.handleCreateGroup(ws, msg);
+        case "markRead": return await this.handleMarkRead(ws, msg);
         case "typing": return await this.handleTyping(ws, msg);
         case "callOffer":
         case "callAnswer":
@@ -135,6 +139,115 @@ export class KontakRoom extends DurableObject {
     } catch {}
   }
 
+  async ensureSchema() {
+    if (!this._schema) {
+      this._schema = (async () => {
+        const sqls = [
+          "ALTER TABLE users ADD COLUMN photo TEXT DEFAULT ''",
+          "ALTER TABLE conversations ADD COLUMN title TEXT DEFAULT ''",
+          "ALTER TABLE conversations ADD COLUMN is_group INTEGER DEFAULT 0",
+          "ALTER TABLE messages ADD COLUMN read_at INTEGER DEFAULT 0",
+          "CREATE TABLE IF NOT EXISTS members (conv_id INTEGER NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (conv_id, user_id))"
+        ];
+        for (const sql of sqls) {
+          try { await this.env.DB.prepare(sql).run(); } catch {}
+        }
+      })();
+    }
+    return this._schema;
+  }
+
+  pub(user) {
+    if (!user) return null;
+    return {
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+      photo: user.photo || "",
+      online: this.isOnline(user.id)
+    };
+  }
+
+  async memberIds(conv) {
+    if (!conv || !conv.isGroup) return [conv.userA, conv.userB].filter((id) => id > 0);
+    const rows = await this.db.select().from(schema.members).where(eq(schema.members.convId, conv.id));
+    const ids = rows.map((r) => r.userId);
+    if (!ids.includes(conv.userA)) ids.push(conv.userA);
+    return ids;
+  }
+
+  async inConv(conv, meId) {
+    if (!conv) return false;
+    if (conv.isGroup) return (await this.memberIds(conv)).includes(meId);
+    return conv.userA === meId || conv.userB === meId;
+  }
+
+  async others(conv, meId) {
+    return (await this.memberIds(conv)).filter((id) => id !== meId && id > 0);
+  }
+
+  async markRead(meId, convId) {
+    const at = Date.now();
+    await this.env.DB.prepare(
+      "UPDATE messages SET read_at = ? WHERE conv_id = ? AND from_id != ? AND (read_at IS NULL OR read_at = 0)"
+    ).bind(at, convId, meId).run();
+    const conv = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, convId)).get();
+    if (!conv) return;
+    for (const id of await this.others(conv, meId)) {
+      this.broadcastToUser(id, { type: "messages-read", convId, by: meId, at });
+    }
+  }
+
+  async convsFor(meId) {
+    const direct = await this.db.select().from(schema.conversations)
+      .where(or(eq(schema.conversations.userA, meId), eq(schema.conversations.userB, meId)));
+    const map = new Map(direct.map((c) => [c.id, c]));
+    const mem = await this.db.select().from(schema.members).where(eq(schema.members.userId, meId));
+    for (const m of mem) {
+      if (map.has(m.convId)) continue;
+      const c = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, m.convId)).get();
+      if (c) map.set(c.id, c);
+    }
+    return [...map.values()].sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
+  }
+
+  async summarize(c, meId) {
+    const last = await this.db.select().from(schema.messages)
+      .where(eq(schema.messages.convId, c.id))
+      .orderBy(desc(schema.messages.id))
+      .limit(1)
+      .get();
+    const seen = !!(last && last.fromId === meId && last.readAt);
+    if (c.isGroup) {
+      const ids = await this.memberIds(c);
+      return {
+        id: c.id,
+        isGroup: true,
+        peer: {
+          id: 0,
+          name: c.title || "Gwoup",
+          phone: ids.length + " moun",
+          online: ids.some((id) => id !== meId && this.isOnline(id)),
+          photo: "",
+          isGroup: true
+        },
+        lastAt: c.lastAt,
+        lastBody: c.lastBody,
+        seen
+      };
+    }
+    const peerId = c.userA === meId ? c.userB : c.userA;
+    const peer = await this.db.select().from(schema.users).where(eq(schema.users.id, peerId)).get();
+    return {
+      id: c.id,
+      isGroup: false,
+      peer: peer ? this.pub(peer) : { id: peerId, name: "?", phone: "", online: false, photo: "" },
+      lastAt: c.lastAt,
+      lastBody: c.lastBody,
+      seen
+    };
+  }
+
   async hashPass(password, salt) {
     const data = new TextEncoder().encode(salt + password);
     const buf = await crypto.subtle.digest("SHA-256", data);
@@ -154,7 +267,7 @@ export class KontakRoom extends DurableObject {
     const hash = await this.hashPass(password, salt);
     const res = await this.db.insert(schema.users).values({ name, phone, salt, hash, createdAt: Date.now() }).returning();
 
-    const me = { id: res[0].id, name, phone };
+    const me = { id: res[0].id, name, phone, photo: "" };
     this.addOnline(me.id, ws);
     this.send(ws, { type: "auth-ok", user: me });
     await this.broadcastPresence(me.id, true);
@@ -167,7 +280,7 @@ export class KontakRoom extends DurableObject {
     const hash = await this.hashPass(data.password, user.salt);
     if (hash !== user.hash) throw new Error("bad-creds");
 
-    const me = { id: user.id, name: user.name, phone: user.phone };
+    const me = { id: user.id, name: user.name, phone: user.phone, photo: user.photo || "" };
     this.addOnline(me.id, ws);
     this.send(ws, { type: "auth-ok", user: me });
     await this.broadcastPresence(me.id, true);
@@ -182,31 +295,22 @@ export class KontakRoom extends DurableObject {
     const results = await this.db.select({ id: schema.users.id, name: schema.users.name, phone: schema.users.phone })
       .from(schema.users)
       .limit(50);
-    const list = results.filter((u) => u.id !== meId && (
+    const picked = results.filter((u) => u.id !== meId && (
       (u.name || "").toLowerCase().includes(q) || (qd.length >= 3 && (u.phone || "").includes(qd))
-    )).slice(0, 20).map((u) => ({ ...u, online: this.isOnline(u.id) }));
+    )).slice(0, 12);
+    const list = [];
+    for (const u of picked) {
+      const full = await this.db.select().from(schema.users).where(eq(schema.users.id, u.id)).get();
+      list.push(this.pub(full));
+    }
     this.send(ws, { type: "search-results", results: list });
   }
 
   async handleGetConversations(ws) {
     const meId = this.needUser(ws);
-    const convs = await this.db.select().from(schema.conversations)
-      .where(or(eq(schema.conversations.userA, meId), eq(schema.conversations.userB, meId)))
-      .orderBy(desc(schema.conversations.lastAt));
-
+    const convs = await this.convsFor(meId);
     const list = [];
-    for (const c of convs) {
-      const peerId = c.userA === meId ? c.userB : c.userA;
-      const peer = await this.db.select().from(schema.users).where(eq(schema.users.id, peerId)).get();
-      list.push({
-        id: c.id,
-        peer: peer
-          ? { id: peer.id, name: peer.name, phone: peer.phone, online: this.isOnline(peer.id) }
-          : { id: peerId, name: "?", phone: "", online: false },
-        lastAt: c.lastAt,
-        lastBody: c.lastBody
-      });
-    }
+    for (const c of convs) list.push(await this.summarize(c, meId));
     this.send(ws, { type: "conversations", list });
   }
 
@@ -226,7 +330,7 @@ export class KontakRoom extends DurableObject {
       const res = await this.db.insert(schema.conversations).values({ userA: lo, userB: hi }).returning();
       conv = res[0];
     }
-    this.send(ws, { type: "conversation", id: conv.id, peer: { id: peer.id, name: peer.name, phone: peer.phone, online: this.isOnline(peer.id) } });
+    this.send(ws, { type: "conversation", id: conv.id, peer: this.pub(peer) });
   }
 
   async handleGetMessages(ws, msg) {
@@ -236,18 +340,20 @@ export class KontakRoom extends DurableObject {
     const limit = Math.min(50, Number(msg.limit) || 30);
 
     const conv = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, convId)).get();
-    if (!conv || (conv.userA !== meId && conv.userB !== meId)) throw new Error("no-conv");
+    if (!(await this.inConv(conv, meId))) throw new Error("no-conv");
 
     const results = await this.db.select({
       id: schema.messages.id,
       from: schema.messages.fromId,
       body: schema.messages.body,
-      at: schema.messages.at
+      at: schema.messages.at,
+      readAt: schema.messages.readAt
     }).from(schema.messages)
       .where(and(eq(schema.messages.convId, convId), lt(schema.messages.id, before)))
       .orderBy(desc(schema.messages.id))
       .limit(limit);
 
+    await this.markRead(meId, convId);
     this.send(ws, { type: "messages", convId, messages: results.reverse(), hasMore: results.length === limit });
   }
 
@@ -258,10 +364,10 @@ export class KontakRoom extends DurableObject {
     if (!body.trim()) throw new Error("empty");
 
     const conv = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, convId)).get();
-    if (!conv || (conv.userA !== meId && conv.userB !== meId)) throw new Error("no-conv");
+    if (!(await this.inConv(conv, meId))) throw new Error("no-conv");
 
     const at = Date.now();
-    const res = await this.db.insert(schema.messages).values({ convId, fromId: meId, body, at }).returning();
+    const res = await this.db.insert(schema.messages).values({ convId, fromId: meId, body, at, readAt: 0 }).returning();
     await this.db.update(schema.conversations)
       .set({ lastAt: at, lastBody: body.slice(0, 80) })
       .where(eq(schema.conversations.id, convId));
@@ -269,11 +375,64 @@ export class KontakRoom extends DurableObject {
     const payload = {
       type: "new-message",
       convId,
-      message: { id: res[0].id, convId, from: meId, body, at }
+      message: { id: res[0].id, convId, from: meId, body, at, readAt: 0 }
     };
     this.send(ws, payload);
-    const peerId = conv.userA === meId ? conv.userB : conv.userA;
-    this.broadcastToUser(peerId, payload);
+    for (const id of await this.others(conv, meId)) this.broadcastToUser(id, payload);
+  }
+
+  async handleSetProfile(ws, msg) {
+    const meId = this.needUser(ws);
+    const photo = String(msg.photo || "");
+    if (photo && (!photo.startsWith("data:image/") || photo.length > 80000)) throw new Error("photo-big");
+    const name = String(msg.name || "").trim().slice(0, 40);
+    const patch = { photo };
+    if (name) patch.name = name;
+    await this.db.update(schema.users).set(patch).where(eq(schema.users.id, meId));
+    const user = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
+    this.send(ws, { type: "profile-ok", user: this.pub(user) });
+  }
+
+  async handleCreateGroup(ws, msg) {
+    const meId = this.needUser(ws);
+    const title = String(msg.title || "Gwoup").trim().slice(0, 40) || "Gwoup";
+    const raw = Array.isArray(msg.phones) ? msg.phones.join(",") : String(msg.phones || "");
+    const ids = new Set([meId]);
+    for (const part of raw.split(/[\s,;]+/)) {
+      const phone = part.replace(/\D/g, "");
+      if (phone.length < 8) continue;
+      const u = await this.db.select().from(schema.users).where(eq(schema.users.phone, phone)).get();
+      if (u) ids.add(u.id);
+    }
+    if (ids.size < 2) throw new Error("group-need-people");
+    const res = await this.db.insert(schema.conversations).values({
+      userA: meId,
+      userB: -Date.now(),
+      title,
+      isGroup: 1,
+      lastAt: Date.now(),
+      lastBody: "Gwoup kreye"
+    }).returning();
+    const conv = res[0];
+    for (const id of ids) {
+      await this.db.insert(schema.members).values({ convId: conv.id, userId: id });
+    }
+    this.send(ws, {
+      type: "conversation",
+      id: conv.id,
+      peer: { id: 0, name: title, phone: ids.size + " moun", online: false, photo: "", isGroup: true }
+    });
+    for (const id of ids) {
+      if (id !== meId) this.broadcastToUser(id, { type: "conversations-refresh" });
+    }
+  }
+
+  async handleMarkRead(ws, msg) {
+    const meId = this.needUser(ws);
+    const convId = Number(msg.convId);
+    const conv = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, convId)).get();
+    if (!(await this.inConv(conv, meId))) return;
+    await this.markRead(meId, convId);
   }
 
   async handleTyping(ws, msg) {
@@ -281,10 +440,11 @@ export class KontakRoom extends DurableObject {
     const convId = Number(msg.convId);
     if (!convId) return;
     const conv = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, convId)).get();
-    if (!conv || (conv.userA !== meId && conv.userB !== meId)) return;
-    const peerId = conv.userA === meId ? conv.userB : conv.userA;
+    if (!(await this.inConv(conv, meId))) return;
     const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
-    this.broadcastToUser(peerId, { type: "typing", convId, from: meId, fromName: me ? me.name : "?" });
+    for (const id of await this.others(conv, meId)) {
+      this.broadcastToUser(id, { type: "typing", convId, from: meId, fromName: me ? me.name : "?" });
+    }
   }
 
   setBusy(userId, peerId) {

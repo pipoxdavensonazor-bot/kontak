@@ -1,0 +1,9 @@
+ALTER TABLE users ADD COLUMN photo TEXT DEFAULT '';
+ALTER TABLE conversations ADD COLUMN title TEXT DEFAULT '';
+ALTER TABLE conversations ADD COLUMN is_group INTEGER DEFAULT 0;
+ALTER TABLE messages ADD COLUMN read_at INTEGER DEFAULT 0;
+CREATE TABLE IF NOT EXISTS members (
+  conv_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  PRIMARY KEY (conv_id, user_id)
+);

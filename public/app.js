@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v9";
+  const BUILD = "v10";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -13,6 +13,8 @@
     "empty": "Mesaj vid.",
     "no-peer": "Moun sa pa egziste.",
     "no-conv": "Konvèsasyon pa jwenn.",
+    "photo-big": "Foto a twò lou. Chwazi yon pi piti.",
+    "group-need-people": "Mete omwen yon nimewo ki deja gen kont.",
     "Nimewo twò kout (8-15 chif)": "Nimewo twò kout. Mete kòd peyi a, egzanp 50937123456.",
     "Modpas omwen 4 karaktè": "Modpas dwe gen omwen 4 karaktè."
   };
@@ -94,6 +96,7 @@
     $("mainView").hidden = false;
     $("logoutBtn").hidden = false;
     toast(T("welcome") + " " + me.name + "!");
+    paintMe();
     askNotify();
     send({ type: "getConversations" });
     flushOutbox();
@@ -140,6 +143,9 @@
     else if (o.type === "callDecline" || o.type === "callHangup") endCall();
     else if (o.type === "callBusy") onCallBusy();
     else if (o.type === "presence") onPresence(o);
+    else if (o.type === "profile-ok") { me = Object.assign(me || {}, o.user); toast("Foto sove"); paintMe(); }
+    else if (o.type === "messages-read") onRead(o);
+    else if (o.type === "conversations-refresh") send({ type: "getConversations" });
   }
 
   function connect() {
@@ -227,6 +233,40 @@
     location.reload();
   };
 
+  $("photoBtn").onclick = () => $("photoInput").click();
+  $("photoInput").onchange = () => {
+    const file = $("photoInput").files && $("photoInput").files[0];
+    $("photoInput").value = "";
+    if (!file) return;
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const size = 96;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const s = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      let photo = canvas.toDataURL("image/jpeg", 0.55);
+      if (photo.length > 70000) photo = canvas.toDataURL("image/jpeg", 0.35);
+      if (!send({ type: "setProfile", photo })) return toast("Pa konekte");
+    };
+    img.src = url;
+  };
+  $("groupBtn").onclick = () => { $("groupModal").hidden = false; };
+  $("groupClose").onclick = () => { $("groupModal").hidden = true; };
+  $("groupSave").onclick = () => {
+    const title = $("groupTitle").value.trim();
+    const phones = $("groupPhones").value.trim();
+    if (!phones) return toast("Mete nimewo yo");
+    if (!send({ type: "createGroup", title, phones })) return toast("Pa konekte");
+    $("groupModal").hidden = true;
+    $("groupTitle").value = "";
+    $("groupPhones").value = "";
+  };
+
   connect();
 
   let searchTimer;
@@ -240,6 +280,26 @@
   };
 
   function initial(name) { return (name || "?").charAt(0).toUpperCase(); }
+  function when(ts) {
+    if (!ts) return "";
+    const d = new Date(Number(ts));
+    const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (d.toDateString() === new Date().toDateString()) return hm;
+    return d.toLocaleDateString([], { day: "2-digit", month: "short" });
+  }
+  function fillAvatar(el, person) {
+    el.innerHTML = "";
+    if (person && person.photo) {
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = person.photo;
+      el.appendChild(img);
+    } else el.textContent = initial(person && person.name);
+  }
+  function paintMe() {
+    const el = $("meAvatar");
+    if (el && me) fillAvatar(el, me);
+  }
 
   function renderSearch(results) {
     const el = $("searchRes");
@@ -247,9 +307,20 @@
     results.forEach((u) => {
       const d = document.createElement("div");
       d.className = "conv";
-      d.innerHTML = `<div class="avatar">${initial(u.name)}</div><div class="grow"><b></b><div class="prev"></div></div><span class="dot${u.online ? " on" : ""}"></span>`;
-      d.querySelector("b").textContent = u.name || "?";
-      d.querySelector(".prev").textContent = u.phone || "";
+      const av = document.createElement("div");
+      av.className = "avatar";
+      fillAvatar(av, u);
+      const mid = document.createElement("div");
+      mid.className = "grow";
+      const b = document.createElement("b");
+      b.textContent = u.name || "?";
+      const prev = document.createElement("div");
+      prev.className = "prev";
+      prev.textContent = u.phone || "";
+      mid.append(b, prev);
+      const dot = document.createElement("span");
+      dot.className = "dot" + (u.online ? " on" : "");
+      d.append(av, mid, dot);
       d.onclick = () => {
         currentPeer = u;
         send({ type: "getOrCreateConversation", peerId: u.id });
@@ -266,9 +337,25 @@
     list.forEach((c) => {
       const d = document.createElement("div");
       d.className = "conv" + (Number(currentConv) === Number(c.id) ? " active" : "");
-      d.innerHTML = `<div class="avatar">${initial(c.peer && c.peer.name)}</div><div class="grow"><b></b><span class="dot${c.peer && c.peer.online ? " on" : ""}"></span><div class="prev"></div></div>`;
-      d.querySelector("b").textContent = (c.peer && c.peer.name) || "?";
-      d.querySelector(".prev").textContent = (c.lastBody || (c.peer && c.peer.phone) || "");
+      const av = document.createElement("div");
+      av.className = "avatar";
+      fillAvatar(av, c.peer);
+      const mid = document.createElement("div");
+      mid.className = "grow";
+      const b = document.createElement("b");
+      b.textContent = (c.peer && c.peer.name) || "?";
+      const prev = document.createElement("div");
+      prev.className = "prev";
+      prev.textContent = c.lastBody || (c.peer && c.peer.phone) || "";
+      mid.append(b, prev);
+      const side = document.createElement("div");
+      side.className = "convmeta";
+      const tm = document.createElement("div");
+      tm.textContent = when(c.lastAt);
+      const st = document.createElement("div");
+      st.textContent = c.seen ? "vu" : (c.peer && c.peer.online ? "an liy" : "");
+      side.append(tm, st);
+      d.append(av, mid, side);
       d.onclick = () => { currentConv = c.id; currentPeer = c.peer; openChat(c.id); };
       el.appendChild(d);
     });
@@ -277,8 +364,11 @@
   function openChat(convId) {
     currentConv = convId;
     $("chatName").textContent = currentPeer ? currentPeer.name : "—";
-    $("chatSub").textContent = currentPeer ? currentPeer.phone : "";
+    $("chatSub").textContent = currentPeer ? (currentPeer.isGroup ? currentPeer.phone : (currentPeer.online ? "An liy" : currentPeer.phone)) : "";
     $("chatOnline").className = "dot" + (currentPeer && currentPeer.online ? " on" : "");
+    fillAvatar($("chatAvatar"), currentPeer);
+    $("audioBtn").hidden = !!(currentPeer && currentPeer.isGroup);
+    $("callBtn").hidden = !!(currentPeer && currentPeer.isGroup);
     $("msgs").innerHTML = "";
     send({ type: "getMessages", convId: Number(convId) });
     send({ type: "getConversations" });
@@ -291,7 +381,16 @@
     list.forEach((m) => {
       const d = document.createElement("div");
       d.className = "msg" + (me && m.from === me.id ? " me" : "");
-      d.textContent = m.body;
+      const text = document.createElement("div");
+      text.textContent = m.body;
+      d.appendChild(text);
+      if (me && m.from === me.id) {
+        const tick = document.createElement("div");
+        tick.className = "tick";
+        tick.dataset.id = m.id;
+        tick.textContent = m.readAt ? "vu" : "voye";
+        d.appendChild(tick);
+      }
       el.appendChild(d);
     });
     el.scrollTop = el.scrollHeight;
@@ -308,8 +407,14 @@
     send({ type: "getConversations" });
     if (me && o.message && o.message.from !== me.id) {
       const looking = document.hasFocus() && !document.hidden && Number(o.convId) === Number(currentConv);
-      if (!looking) notify("Kontak", o.message.body);
+      if (looking) send({ type: "markRead", convId: Number(o.convId) });
+      else notify("Kontak", o.message.body);
     }
+  }
+
+  function onRead(o) {
+    if (Number(o.convId) !== Number(currentConv)) return;
+    document.querySelectorAll("#msgs .tick").forEach((el) => { el.textContent = "vu"; });
   }
 
   function onPresence(o) {
@@ -479,6 +584,7 @@
 
   async function startCall(audioOnly) {
     if (!currentConv || !currentPeer) return toast("Chwazi yon konvèsasyon");
+    if (currentPeer.isGroup) return toast("Apèl gwoup poko pare");
     if (pc) return;
     callConv = Number(currentConv);
     const wantVideo = !audioOnly;

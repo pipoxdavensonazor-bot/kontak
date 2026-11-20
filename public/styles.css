@@ -39,7 +39,11 @@ label{font-size:13px;color:var(--mut);display:block;margin:8px 0 4px}
 .conv{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:10px;align-items:center}
 .conv.active{background:#0b1226}
 body.hc .conv.active{background:#d0d0d0}
-.avatar{width:38px;height:38px;border-radius:50%;background:#334155;display:flex;align-items:center;justify-content:center;font-weight:800;flex:none}
+.avatar{width:38px;height:38px;border-radius:50%;background:#334155;display:flex;align-items:center;justify-content:center;font-weight:800;flex:none;overflow:hidden}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.convmeta{font-size:11px;color:var(--mut);text-align:right;min-width:52px}
+.tick{font-size:10px;opacity:.75;text-align:right;margin-top:3px}
+#groupModal{position:fixed;left:50%;top:18vh;transform:translateX(-50%);z-index:40;width:min(420px,92vw)}
 .dot{width:10px;height:10px;border-radius:50%;background:#475569;display:inline-block;margin-left:6px;vertical-align:middle}
 .dot.on{background:var(--acc)}
 .prev{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}

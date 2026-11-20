@@ -7,7 +7,7 @@
 <meta name="description" content="Messagerie temps réel et appels vidéo pour la communauté haïtienne">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=9">
+<link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 <div id="topbar">
@@ -71,6 +71,12 @@
     <div id="mainGrid">
       <div id="side">
         <div style="padding:10px">
+          <div class="row" style="margin-bottom:8px">
+            <div id="meAvatar" class="avatar"></div>
+            <button id="photoBtn" class="ghost grow" type="button">Foto</button>
+            <button id="groupBtn" class="ghost" type="button">Gwoup</button>
+          </div>
+          <input id="photoInput" type="file" accept="image/*" hidden>
           <input id="searchInput" placeholder="Chache non oswa nimewo…">
           <div id="searchRes"></div>
         </div>
@@ -78,6 +84,7 @@
       </div>
       <div id="chatPane">
         <div id="chatHead" class="row" style="padding:10px;border-bottom:1px solid var(--line)">
+          <div id="chatAvatar" class="avatar"></div>
           <div class="grow">
             <b id="chatName">—</b>
             <span id="chatOnline" class="dot"></span>
@@ -98,6 +105,18 @@
       Mode <b>SAT</b> : apèl odyo sèlman (~16 kbps) pou rezo fèb (satelit, 2G).<br>
       Videyo nòmal: 320×180 / 10 fps. TURN rekòmande sou mobil.
     </p>
+  </div>
+
+  <div id="groupModal" class="card" hidden>
+    <h3 style="margin:0 0 8px">Nouvo gwoup</h3>
+    <label>Non gwoup la</label>
+    <input id="groupTitle" placeholder="Fanmi">
+    <label>Nimewo ki deja gen kont</label>
+    <input id="groupPhones" placeholder="50937123456, 50944111222">
+    <div class="row" style="margin-top:10px">
+      <button id="groupSave" class="grow" type="button">Kreye</button>
+      <button id="groupClose" class="ghost" type="button">Fèmen</button>
+    </div>
   </div>
 
   <div id="turnModal" class="card" hidden>
@@ -138,7 +157,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -173,7 +192,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=9");
+  navigator.serviceWorker.register("/sw.js?v=10");
 }
 </script>
 </body>
