@@ -1,4 +1,4 @@
-const CACHE = "kontak-v8";
+const CACHE = "kontak-v9";
 
 self.addEventListener("install", () => {
   self.skipWaiting();

@@ -7,7 +7,7 @@
 <meta name="description" content="Messagerie temps réel et appels vidéo pour la communauté haïtienne">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
 <div id="topbar">
@@ -17,7 +17,6 @@
   <button id="turnBtn" class="ghost" type="button">TURN</button>
   <button id="langBtn" class="ghost" type="button">FR</button>
   <button id="contrastBtn" class="ghost" type="button">Aa</button>
-  <button id="installBtn" class="ghost" type="button" hidden>Telechaje</button>
   <button id="logoutBtn" class="ghost" type="button" hidden>Soti</button>
 </div>
 <div id="connBar">Ap konekte…</div>
@@ -32,6 +31,15 @@
         <span>Apèl ki sonnen</span>
         <span>Videyo</span>
         <span>Mòd SAT</span>
+      </div>
+      <div id="installBanner" class="install-card">
+        <b>Enstale Kontak</b>
+        <p>Sou Chrome, fenèt enstalasyon an parèt poukont li. Sou Android, telechaje APK la.</p>
+        <div class="row">
+          <button id="installBtn" type="button">Enstale sou Chrome</button>
+          <a id="apkBtn" href="kontak.apk" download="Kontak.apk">Telechaje APK</a>
+        </div>
+        <p id="installHint" class="hint"></p>
       </div>
     </section>
     <div class="card">
@@ -130,24 +138,42 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 <script>
+const installBanner = document.getElementById("installBanner");
+const installBtn = document.getElementById("installBtn");
+const installHint = document.getElementById("installHint");
+const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
+if (standalone && installBanner) installBanner.hidden = true;
+
 let deferredPrompt = null;
+async function openChromeInstall() {
+  if (!deferredPrompt) {
+    if (installHint) installHint.textContent = "Chrome poko pare. Itilize meni ⋮ → Enstale Kontak, oswa telechaje APK la.";
+    return;
+  }
+  deferredPrompt.prompt();
+  const choice = await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  if (choice && choice.outcome === "accepted" && installBanner) installBanner.hidden = true;
+}
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
-  const btn = document.getElementById("installBtn");
-  if (btn) btn.hidden = false;
+  if (installBtn) installBtn.hidden = false;
+  if (!sessionStorage.getItem("kontak_install_asked")) {
+    const go = () => {
+      if (sessionStorage.getItem("kontak_install_asked")) return;
+      sessionStorage.setItem("kontak_install_asked", "1");
+      openChromeInstall();
+    };
+    document.addEventListener("pointerdown", go, { once: true, capture: true });
+  }
 });
-document.getElementById("installBtn").onclick = async () => {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
-  deferredPrompt = null;
-  document.getElementById("installBtn").hidden = true;
-};
+if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
+window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=8");
+  navigator.serviceWorker.register("/sw.js?v=9");
 }
 </script>
 </body>
