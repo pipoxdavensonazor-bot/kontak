@@ -55,6 +55,13 @@ export class KontakRoom extends DurableObject {
         case "getPhoto": return await this.handleGetPhoto(ws, msg);
         case "markRead": return await this.handleMarkRead(ws, msg);
         case "pushSubscribe": return await this.handlePushSubscribe(ws, msg);
+        case "getCalls": return await this.handleGetCalls(ws);
+        case "matchContacts": return await this.handleMatchContacts(ws, msg);
+        case "callAdd": return await this.handleCallAdd(ws, msg);
+        case "meshOffer":
+        case "meshAnswer":
+        case "meshIce":
+          return await this.relayMesh(ws, msg);
         case "typing": return await this.handleTyping(ws, msg);
         case "callOffer":
         case "callAnswer":
@@ -150,7 +157,9 @@ export class KontakRoom extends DurableObject {
           "ALTER TABLE conversations ADD COLUMN title TEXT DEFAULT ''",
           "ALTER TABLE conversations ADD COLUMN is_group INTEGER DEFAULT 0",
           "ALTER TABLE messages ADD COLUMN read_at INTEGER DEFAULT 0",
-          "CREATE TABLE IF NOT EXISTS members (conv_id INTEGER NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (conv_id, user_id))"
+          "CREATE TABLE IF NOT EXISTS members (conv_id INTEGER NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (conv_id, user_id))",
+          "CREATE TABLE IF NOT EXISTS push_subs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL)",
+          "CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, peer_id INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, at INTEGER NOT NULL)"
         ];
         for (const sql of sqls) {
           try { await this.env.DB.prepare(sql).run(); } catch {}
@@ -432,8 +441,10 @@ export class KontakRoom extends DurableObject {
     const photo = String(msg.photo || "");
     if (photo && (!photo.startsWith("data:image/") || photo.length > 14000)) throw new Error("photo-big");
     const name = String(msg.name || "").trim().slice(0, 40);
-    const patch = { photo };
+    const patch = {};
     if (name) patch.name = name;
+    if (photo) patch.photo = photo;
+    if (!Object.keys(patch).length) return;
     await this.db.update(schema.users).set(patch).where(eq(schema.users.id, meId));
     const user = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
     this.send(ws, { type: "profile-ok", user: this.pub(user, true) });
@@ -540,7 +551,11 @@ export class KontakRoom extends DurableObject {
       }
       this.setBusy(meId, peerId);
       this.setBusy(peerId, meId);
+      const kind = msg.audioOnly ? "audio" : "video";
+      await this.recordCall(meId, peerId, kind, "out");
+      await this.recordCall(peerId, meId, kind, "miss");
     }
+    if (msg.type === "callAnswer") await this.markAnswered(meId, peerId);
     if (msg.type === "callHangup" || msg.type === "callDecline") {
       this.clearBusy(meId);
       this.clearBusy(peerId);
@@ -555,5 +570,78 @@ export class KontakRoom extends DurableObject {
         kind: "call"
       });
     }
+  }
+
+  async recordCall(userId, peerId, kind, status) {
+    if (!userId || !peerId || peerId < 0) return;
+    try {
+      await this.env.DB.prepare(
+        "INSERT INTO calls (user_id, peer_id, kind, status, at) VALUES (?, ?, ?, ?, ?)"
+      ).bind(userId, peerId, kind, status, Date.now()).run();
+    } catch (e) { console.error("call-log", e); }
+  }
+
+  async markAnswered(userId, peerId) {
+    try {
+      await this.env.DB.prepare(
+        "UPDATE calls SET status = 'in' WHERE id = (SELECT id FROM calls WHERE user_id = ? AND peer_id = ? AND status = 'miss' ORDER BY id DESC LIMIT 1)"
+      ).bind(userId, peerId).run();
+    } catch {}
+  }
+
+  async handleGetCalls(ws) {
+    const meId = this.needUser(ws);
+    const q = await this.env.DB.prepare(
+      "SELECT c.id, c.peer_id as peerId, c.kind, c.status, c.at, u.name, u.phone FROM calls c LEFT JOIN users u ON u.id = c.peer_id WHERE c.user_id = ? ORDER BY c.id DESC LIMIT 40"
+    ).bind(meId).all();
+    this.send(ws, { type: "calls", list: q.results || [] });
+  }
+
+  async handleMatchContacts(ws, msg) {
+    const meId = this.needUser(ws);
+    const phones = [...new Set((msg.phones || []).map((p) => String(p).replace(/\D/g, "")).filter((p) => p.length >= 8))].slice(0, 80);
+    if (!phones.length) return this.send(ws, { type: "contacts", list: [] });
+    const marks = phones.map(() => "?").join(",");
+    const q = await this.env.DB.prepare(
+      "SELECT id, name, phone FROM users WHERE phone IN (" + marks + ")"
+    ).bind(...phones).all();
+    const list = (q.results || []).filter((u) => u.id !== meId).map((u) => ({
+      id: u.id, name: u.name, phone: u.phone, online: this.isOnline(u.id), hasPhoto: 0
+    }));
+    this.send(ws, { type: "contacts", list });
+  }
+
+  async handleCallAdd(ws, msg) {
+    const meId = this.needUser(ws);
+    const to = Number(msg.to);
+    if (!to || to === meId) throw new Error("no-peer");
+    const peer = await this.db.select().from(schema.users).where(eq(schema.users.id, to)).get();
+    if (!peer) throw new Error("no-peer");
+    const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
+    const withIds = [meId, ...(Array.isArray(msg.with) ? msg.with.map(Number) : [])].filter((id, i, a) => id > 0 && id !== to && a.indexOf(id) === i);
+    const people = [];
+    for (const id of withIds) {
+      const u = id === meId ? me : await this.db.select().from(schema.users).where(eq(schema.users.id, id)).get();
+      if (u) people.push({ id: u.id, name: u.name });
+    }
+    await this.recordCall(meId, to, "audio", "out");
+    await this.recordCall(to, meId, "audio", "miss");
+    this.broadcastToUser(to, {
+      type: "callInvite",
+      from: meId,
+      fromName: me ? me.name : "?",
+      convId: msg.convId,
+      with: people
+    });
+    await this.pushTo(to, { title: "Apèl Kontak", body: (me ? me.name : "Yon moun") + " vle ajoute ou nan apèl la", tag: "call", kind: "call" });
+  }
+
+  async relayMesh(ws, msg) {
+    const meId = this.needUser(ws);
+    const to = Number(msg.to);
+    if (!to || to === meId) return;
+    if (msg.type === "meshAnswer") await this.markAnswered(meId, to);
+    const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
+    this.broadcastToUser(to, { ...msg, from: meId, fromName: me ? me.name : "?" });
   }
 }

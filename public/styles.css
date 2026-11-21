@@ -43,7 +43,12 @@ body.hc .conv.active{background:#d0d0d0}
 .avatar img{width:100%;height:100%;object-fit:cover}
 .convmeta{font-size:11px;color:var(--mut);text-align:right;min-width:52px}
 .tick{font-size:10px;opacity:.75;text-align:right;margin-top:3px}
-#groupModal{position:fixed;left:50%;top:18vh;transform:translateX(-50%);z-index:40;width:min(420px,92vw)}
+#nav{display:flex;position:sticky;top:46px;z-index:4;background:#0b1226;border-bottom:1px solid var(--line)}
+body.hc #nav{background:#e0e0e0}
+#nav button{flex:1;background:transparent;color:var(--mut);border:0;border-radius:0;min-height:48px}
+#nav button.on{color:var(--acc);box-shadow:inset 0 -2px 0 var(--acc)}
+.miss{color:var(--warn)}
+#addModal{position:fixed;left:50%;top:16vh;transform:translateX(-50%);z-index:40;width:min(420px,92vw)}
 .dot{width:10px;height:10px;border-radius:50%;background:#475569;display:inline-block;margin-left:6px;vertical-align:middle}
 .dot.on{background:var(--acc)}
 .prev{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}

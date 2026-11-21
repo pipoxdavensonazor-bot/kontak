@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v13";
+  const BUILD = "v14";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -549,7 +549,9 @@
     return servers;
   }
 
-  let pc = null, localStream = null, callConv = null, pendingOffer = null, iceQueue = [], pendingDial = null, screenTrack = null;
+  let extras = new Map();
+  let peopleCache = [];
+  try { peopleCache = JSON.parse(localStorage.getItem("kontak_people") || "[]"); } catch {}
 
   function flushIce() {
     if (!pc || !pc.remoteDescription) return;
@@ -676,6 +678,25 @@
   }
 
   $("acceptBtn").onclick = async () => {
+    if (pendingOffer && pendingOffer.invite) {
+      const o = pendingOffer;
+      pendingOffer = null;
+      $("incoming").hidden = true;
+      stopRing();
+      callConv = Number(o.convId) || callConv;
+      $("videoOverlay").hidden = false;
+      $("callStat").textContent = "Ap antre nan apèl la…";
+      try {
+        localStream = await openMedia(false);
+        attachVideo("localVid", localStream);
+        for (const person of (o.with || [])) await meshOfferTo(person.id);
+        $("callStat").textContent = "Nan apèl la";
+      } catch (err) {
+        toast("Mikwo pa disponib");
+        endCall();
+      }
+      return;
+    }
     if (!pendingOffer || !pendingOffer.offer) return;
     const o = pendingOffer;
     pendingOffer = null;
@@ -796,6 +817,9 @@
 
   function endCall(notifyPeer = true) {
     stopRing();
+    extras.forEach((extra) => { try { extra.close(); } catch {} });
+    extras.clear();
+    document.querySelectorAll("audio[id^='extraAudio']").forEach((el) => el.remove());
     if (screenTrack) { try { screenTrack.stop(); } catch {} screenTrack = null; }
     if ($("shareBtn")) $("shareBtn").textContent = "Ekran";
     if (pc) { try { pc.close(); } catch {} pc = null; }
@@ -896,4 +920,202 @@
   $("dialVideo").onclick = () => placeDial(false);
   $("callBtn").onclick = () => startCall(false);
   $("audioBtn").onclick = () => startCall(true);
+
+  function showTab(name) {
+    ["msgs", "people", "calls", "me"].forEach((n) => {
+      const panel = $("tab-" + n);
+      if (panel) panel.hidden = n !== name;
+      const btn = document.querySelector('#nav [data-tab="' + n + '"]');
+      if (btn) btn.className = n === name ? "on" : "";
+    });
+    if (name === "calls") send({ type: "getCalls" });
+    if (name === "people") renderPeople(peopleCache);
+    if (name === "me" && me) {
+      $("profileName").value = me.name || "";
+      $("profilePhone").textContent = me.phone || "";
+      paintMe();
+    }
+  }
+  document.querySelectorAll("#nav button").forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
+
+  function renderPeople(list) {
+    const el = $("peopleList");
+    if (!el) return;
+    el.innerHTML = "";
+    if (!list.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "Pa gen kontak Kontak pou kounye a.";
+      el.appendChild(p);
+      return;
+    }
+    list.forEach((u) => {
+      const d = document.createElement("div");
+      d.className = "conv";
+      const av = document.createElement("div");
+      av.className = "avatar";
+      fillAvatar(av, u);
+      const mid = document.createElement("div");
+      mid.className = "grow";
+      const b = document.createElement("b");
+      b.textContent = u.name || "?";
+      const prev = document.createElement("div");
+      prev.className = "prev";
+      prev.textContent = u.phone || "";
+      mid.append(b, prev);
+      d.append(av, mid);
+      d.onclick = () => {
+        currentPeer = u;
+        send({ type: "getOrCreateConversation", peerId: u.id });
+        showTab("msgs");
+      };
+      el.appendChild(d);
+    });
+  }
+  function renderCalls(list) {
+    const el = $("callList");
+    if (!el) return;
+    el.innerHTML = "";
+    if (!list.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "Pa gen apèl ankò.";
+      el.appendChild(p);
+      return;
+    }
+    const label = { out: "Soti", in: "Resevwa", miss: "Manke" };
+    list.forEach((c) => {
+      const d = document.createElement("div");
+      d.className = "conv";
+      const mid = document.createElement("div");
+      mid.className = "grow";
+      const b = document.createElement("b");
+      b.textContent = c.name || c.phone || "Kontak";
+      const prev = document.createElement("div");
+      prev.className = "prev" + (c.status === "miss" ? " miss" : "");
+      prev.textContent = (c.kind === "video" ? "Videyo" : "Odyo") + " · " + (label[c.status] || c.status) + " · " + when(c.at);
+      mid.append(b, prev);
+      d.append(mid);
+      d.onclick = () => {
+        currentPeer = { id: c.peerId, name: c.name, phone: c.phone };
+        send({ type: "getOrCreateConversation", peerId: c.peerId });
+        pendingDial = c.kind === "video" ? "video" : "audio";
+        showTab("msgs");
+      };
+      el.appendChild(d);
+    });
+  }
+  function renderAddList() {
+    const el = $("addList");
+    el.innerHTML = "";
+    const list = peopleCache.filter((u) => !currentPeer || u.id !== currentPeer.id);
+    if (!list.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "Chwazi kontak telefòn nan onglet Kontak anvan.";
+      el.appendChild(p);
+      return;
+    }
+    list.forEach((u) => {
+      const d = document.createElement("div");
+      d.className = "conv";
+      const b = document.createElement("b");
+      b.textContent = (u.name || "?") + " · " + (u.phone || "");
+      d.appendChild(b);
+      d.onclick = () => {
+        const withIds = [];
+        if (currentPeer && currentPeer.id) withIds.push(currentPeer.id);
+        extras.forEach((_, id) => withIds.push(Number(id)));
+        send({ type: "callAdd", to: u.id, convId: callConv, with: withIds });
+        $("addModal").hidden = true;
+        toast("Ap ajoute " + (u.name || ""));
+      };
+      el.appendChild(d);
+    });
+  }
+  $("syncContacts").onclick = async () => {
+    if (!navigator.contacts || !navigator.contacts.select) return toast("Kontak telefòn mache sou Chrome Android");
+    try {
+      const picked = await navigator.contacts.select(["name", "tel"], { multiple: true });
+      const phones = [];
+      for (const c of picked) for (const tel of (c.tel || [])) {
+        const d = digits(tel);
+        if (d.length >= 8) phones.push(d);
+      }
+      if (!phones.length) return toast("Pa gen nimewo");
+      send({ type: "matchContacts", phones: phones.slice(0, 80) });
+    } catch {}
+  };
+  $("saveProfile").onclick = () => {
+    const name = $("profileName").value.trim();
+    if (!name) return;
+    if (!send({ type: "setProfile", name })) return toast("Pa konekte");
+  };
+  $("notifyBtn").onclick = () => enablePush();
+  $("addBtn").onclick = () => {
+    if (!pc && !extras.size) return toast("Pa gen apèl");
+    renderAddList();
+    $("addModal").hidden = false;
+  };
+  $("addClose").onclick = () => { $("addModal").hidden = true; };
+
+  function makeExtra(id) {
+    const old = extras.get(id);
+    if (old) { try { old.close(); } catch {} }
+    const extra = new RTCPeerConnection(iceConfig());
+    extra._queue = [];
+    extra.onicecandidate = (e) => { if (e.candidate) send({ type: "meshIce", to: id, candidate: e.candidate.toJSON() }); };
+    extra.ontrack = (e) => {
+      let audio = document.getElementById("extraAudio-" + id);
+      if (!audio) {
+        audio = document.createElement("audio");
+        audio.autoplay = true;
+        audio.id = "extraAudio-" + id;
+        document.body.appendChild(audio);
+      }
+      audio.srcObject = e.streams[0] || new MediaStream([e.track]);
+      $("callStat").textContent = "Yon lòt moun rantre";
+    };
+    if (localStream) localStream.getAudioTracks().forEach((t) => extra.addTrack(t, localStream));
+    extras.set(Number(id), extra);
+    return extra;
+  }
+  async function meshOfferTo(id) {
+    const extra = makeExtra(id);
+    const offer = await extra.createOffer();
+    await extra.setLocalDescription(offer);
+    send({ type: "meshOffer", to: id, offer: extra.localDescription.toJSON() });
+  }
+  function onCallInvite(o) {
+    if (pc || extras.size) return toast("Ou deja nan yon apèl");
+    pendingOffer = Object.assign({ invite: true }, o);
+    $("incomingFrom").textContent = (o.fromName || "Kontak") + " vle ajoute ou nan apèl la";
+    $("incoming").hidden = false;
+    startRing(false);
+    if (document.hidden || !document.hasFocus()) notify("Apèl Kontak", (o.fromName || "Yon moun") + " vle ajoute ou");
+  }
+  async function onMeshOffer(o) {
+    if (!localStream || !o.offer) return;
+    const extra = makeExtra(o.from);
+    await extra.setRemoteDescription(new RTCSessionDescription(o.offer));
+    const queued = extra._queue.splice(0);
+    for (const c of queued) { try { await extra.addIceCandidate(c); } catch {} }
+    const answer = await extra.createAnswer();
+    await extra.setLocalDescription(answer);
+    send({ type: "meshAnswer", to: o.from, answer: extra.localDescription.toJSON() });
+  }
+  async function onMeshAnswer(o) {
+    const extra = extras.get(Number(o.from));
+    if (!extra || !o.answer) return;
+    await extra.setRemoteDescription(new RTCSessionDescription(o.answer));
+    const queued = extra._queue.splice(0);
+    for (const c of queued) { try { await extra.addIceCandidate(c); } catch {} }
+  }
+  function onMeshIce(o) {
+    const extra = extras.get(Number(o.from));
+    if (!extra || !o.candidate) return;
+    const c = new RTCIceCandidate(o.candidate);
+    if (!extra.remoteDescription) extra._queue.push(c);
+    else extra.addIceCandidate(c).catch(() => {});
+  }
 })();

@@ -68,15 +68,18 @@
   </div>
 
   <div id="mainView" hidden>
+    <nav id="nav">
+      <button type="button" data-tab="msgs" class="on">Mesaj</button>
+      <button type="button" data-tab="people">Kontak</button>
+      <button type="button" data-tab="calls">Apèl</button>
+      <button type="button" data-tab="me">Mwen</button>
+    </nav>
+    <div id="tab-msgs">
     <div id="mainGrid">
       <div id="side">
         <div style="padding:10px">
           <div class="row" style="margin-bottom:8px">
-            <div id="meAvatar" class="avatar"></div>
-            <button id="photoBtn" class="ghost grow" type="button">Foto</button>
             <button id="groupBtn" class="ghost" type="button">Gwoup</button>
-            <button id="inviteBtn" class="ghost" type="button">Envite</button>
-            <button id="dialBtn" class="ghost" type="button">Rele</button>
           </div>
           <input id="photoInput" type="file" accept="image/*" hidden>
           <input id="searchInput" placeholder="Chache non oswa nimewo…">
@@ -103,10 +106,45 @@
         </div>
       </div>
     </div>
-    <p class="hint" style="margin:12px">
-      Mode <b>SAT</b> : apèl odyo sèlman (~16 kbps) pou rezo fèb (satelit, 2G).<br>
-      Videyo nòmal: 320×180 / 10 fps. TURN rekòmande sou mobil.
-    </p>
+    <p class="hint" style="margin:12px">Mode SAT: apèl odyo sou rezo fèb.</p>
+    </div>
+    <div id="tab-people" hidden>
+      <div class="card">
+        <b>Kontak sou Kontak</b>
+        <p class="hint">Chwazi kontak telefòn nan. Sèlman moun ki gen kont ap parèt.</p>
+        <button id="syncContacts" type="button">Chwazi kontak telefòn</button>
+        <div id="peopleList"></div>
+      </div>
+    </div>
+    <div id="tab-calls" hidden>
+      <div class="card">
+        <div class="row"><b class="grow">Istorik</b><button id="dialBtn" type="button">Konpoze</button></div>
+        <div id="callList"></div>
+      </div>
+    </div>
+    <div id="tab-me" hidden>
+      <div class="card">
+        <div class="row">
+          <div id="meAvatar" class="avatar"></div>
+          <div class="grow">
+            <label>Non</label>
+            <input id="profileName" maxlength="40">
+            <div id="profilePhone" class="small"></div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="photoBtn" class="ghost" type="button">Foto</button>
+          <button id="saveProfile" class="grow" type="button">Sove pwofil</button>
+        </div>
+      </div>
+      <div class="card">
+        <b>Paramèt</b>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">
+          <button id="notifyBtn" class="ghost" type="button">Notifikasyon</button>
+          <button id="inviteBtn" class="ghost" type="button">Envite</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="groupModal" class="card" hidden>
@@ -144,10 +182,17 @@
     <button id="muteBtn" class="ghost" type="button">Mikwo</button>
     <button id="camBtn" class="ghost" type="button">Kamera</button>
     <button id="shareBtn" class="ghost" type="button">Ekran</button>
+    <button id="addBtn" class="ghost" type="button">Ajoute</button>
     <button id="hangBtn" class="danger" type="button">Koupe apèl</button>
   </div>
 </div>
 
+<div id="addModal" class="card" hidden>
+  <b>Ajoute nan apèl la</b>
+  <p class="hint">Moun nan tande apèl la. Odyo sèlman, pou pa alourdi.</p>
+  <div id="addList"></div>
+  <button id="addClose" class="ghost" type="button" style="margin-top:8px">Fèmen</button>
+</div>
 <div id="dialModal" class="card" hidden>
   <div id="dialShow"></div>
   <div id="dialKeys">
@@ -210,7 +255,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=13");
+  navigator.serviceWorker.register("/sw.js?v=14");
 }
 </script>
 </body>
