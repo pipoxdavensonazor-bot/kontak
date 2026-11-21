@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v14";
+  const BUILD = "v15";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -418,10 +418,18 @@
     fillAvatar($("chatAvatar"), currentPeer);
     $("audioBtn").hidden = !!(currentPeer && currentPeer.isGroup);
     $("callBtn").hidden = !!(currentPeer && currentPeer.isGroup);
+    $("tab-msgs").classList.add("in-chat");
+    document.body.classList.add("in-chat");
+    showTab("msgs");
     $("msgs").innerHTML = "";
     send({ type: "getMessages", convId: Number(convId) });
     send({ type: "getConversations" });
   }
+  function closeChat() {
+    $("tab-msgs").classList.remove("in-chat");
+    document.body.classList.remove("in-chat");
+  }
+  $("backBtn").onclick = closeChat;
 
   function renderMessages(list, convId) {
     if (convId && Number(convId) !== Number(currentConv)) return;

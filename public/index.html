@@ -7,7 +7,7 @@
 <meta name="description" content="Messagerie temps réel et appels vidéo pour la communauté haïtienne">
 <meta name="theme-color" content="#0f172a">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=15">
 </head>
 <body>
 <div id="topbar">
@@ -88,15 +88,20 @@
         <div id="convList"></div>
       </div>
       <div id="chatPane">
-        <div id="chatHead" class="row" style="padding:10px;border-bottom:1px solid var(--line)">
-          <div id="chatAvatar" class="avatar"></div>
-          <div class="grow">
-            <b id="chatName">—</b>
-            <span id="chatOnline" class="dot"></span>
-            <div id="chatSub" class="small">—</div>
+        <div id="chatHead">
+          <div class="row">
+            <button id="backBtn" class="ghost" type="button">Retou</button>
+            <div id="chatAvatar" class="avatar"></div>
+            <div class="grow">
+              <b id="chatName">—</b>
+              <span id="chatOnline" class="dot"></span>
+              <div id="chatSub" class="small">—</div>
+            </div>
           </div>
-          <button id="audioBtn" class="ghost" type="button">Apèl odyo</button>
-          <button id="callBtn" type="button">Apèl videyo</button>
+          <div class="row" style="margin-top:8px">
+            <button id="audioBtn" class="ghost grow" type="button">Apèl odyo</button>
+            <button id="callBtn" class="grow" type="button">Apèl videyo</button>
+          </div>
         </div>
         <div id="typingEl" class="small" style="padding:0 12px;height:18px"></div>
         <div id="msgs"></div>
@@ -220,7 +225,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=13"></script>
+<script src="app.js?v=15"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -255,7 +260,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=14");
+  navigator.serviceWorker.register("/sw.js?v=15");
 }
 </script>
 </body>

@@ -34,7 +34,12 @@ label{font-size:13px;color:var(--mut);display:block;margin:8px 0 4px}
 #authTabs{display:flex;gap:8px;margin-bottom:8px}
 #mainGrid{display:grid;grid-template-columns:320px 1fr;gap:0;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:12px;min-height:60vh;background:var(--card)}
 #side{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:60vh}
-#chatPane{display:flex;flex-direction:column;min-height:60vh}
+#chatPane{display:none;flex-direction:column;min-height:calc(100vh - 8px)}
+#chatHead{padding:10px;border-bottom:1px solid var(--line)}
+#tab-msgs.in-chat #side,#tab-msgs.in-chat>.hint{display:none}
+#tab-msgs.in-chat #mainGrid{grid-template-columns:1fr;margin:0;border:0;border-radius:0;min-height:100vh}
+#tab-msgs.in-chat #chatPane{display:flex}
+body.in-chat #nav{display:none}
 #convList{overflow:auto;flex:1}
 .conv{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:10px;align-items:center}
 .conv.active{background:#0b1226}
