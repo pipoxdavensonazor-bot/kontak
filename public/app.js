@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v12";
+  const BUILD = "v13";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -97,7 +97,7 @@
     $("logoutBtn").hidden = false;
     toast(T("welcome") + " " + me.name + "!");
     paintMe();
-    askNotify();
+    enablePush();
     send({ type: "getConversations" });
     flushOutbox();
   }
@@ -754,10 +754,30 @@
     burst();
     ringTimer = setInterval(burst, outgoing ? 2500 : 1800);
   }
-  async function askNotify() {
-    if (!("Notification" in window) || Notification.permission !== "default") return;
-    try { await Notification.requestPermission(); } catch {}
+  async function enablePush() {
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    let perm = Notification.permission;
+    if (perm === "default") {
+      try { perm = await Notification.requestPermission(); } catch { return; }
+    }
+    if (perm !== "granted") return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: b64ToBuf(VAPID_PUBLIC)
+        });
+      }
+      send({ type: "pushSubscribe", subscription: sub.toJSON() });
+    } catch {
+      toast("Enstale aplikasyon an pou resevwa apèl lè telefòn nan fèmen");
+    }
   }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && (!ws || ws.readyState !== 1)) connect();
+  });
   async function notify(title, body) {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     try {

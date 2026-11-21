@@ -175,7 +175,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -210,7 +210,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=12");
+  navigator.serviceWorker.register("/sw.js?v=13");
 }
 </script>
 </body>

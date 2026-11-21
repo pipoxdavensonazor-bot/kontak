@@ -54,6 +54,7 @@ export class KontakRoom extends DurableObject {
         case "createGroup": return await this.handleCreateGroup(ws, msg);
         case "getPhoto": return await this.handleGetPhoto(ws, msg);
         case "markRead": return await this.handleMarkRead(ws, msg);
+        case "pushSubscribe": return await this.handlePushSubscribe(ws, msg);
         case "typing": return await this.handleTyping(ws, msg);
         case "callOffer":
         case "callAnswer":
@@ -157,6 +158,40 @@ export class KontakRoom extends DurableObject {
       })();
     }
     return this._schema;
+  }
+
+  async pushTo(userId, data) {
+    let rows = [];
+    try {
+      const q = await this.env.DB.prepare("SELECT endpoint, p256dh, auth FROM push_subs WHERE user_id = ?").bind(userId).all();
+      rows = q.results || [];
+    } catch {
+      return;
+    }
+    const payload = JSON.stringify(data);
+    for (const row of rows) {
+      try {
+        const status = await sendWebPush(row, payload, data.kind === "call");
+        if (status === 404 || status === 410) {
+          await this.env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ?").bind(row.endpoint).run();
+        }
+      } catch (e) {
+        console.error("push", e);
+      }
+    }
+  }
+
+  async handlePushSubscribe(ws, msg) {
+    const meId = this.needUser(ws);
+    const sub = msg.subscription || {};
+    const endpoint = String(sub.endpoint || "").slice(0, 800);
+    const p256dh = sub.keys && String(sub.keys.p256dh || "");
+    const auth = sub.keys && String(sub.keys.auth || "");
+    if (!endpoint.startsWith("https://") || !p256dh || !auth) return;
+    await this.env.DB.prepare(
+      "INSERT INTO push_subs (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth"
+    ).bind(meId, endpoint, p256dh, auth).run();
+    this.send(ws, { type: "push-ok" });
   }
 
   pub(user, withPhoto) {
@@ -512,5 +547,13 @@ export class KontakRoom extends DurableObject {
     }
 
     this.broadcastToUser(peerId, { ...msg, from: meId, fromName });
+    if (msg.type === "callOffer" && peerId > 0) {
+      await this.pushTo(peerId, {
+        title: "Apèl Kontak",
+        body: fromName + " ap rele ou",
+        tag: "call",
+        kind: "call"
+      });
+    }
   }
 }
