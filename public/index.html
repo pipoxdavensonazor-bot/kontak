@@ -6,8 +6,13 @@
 <title>Kontak — Mesajri ak Apèl Videyo</title>
 <meta name="description" content="Messagerie temps réel et appels vidéo pour la communauté haïtienne">
 <meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kontak">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=18">
+<link rel="stylesheet" href="styles.css?v=20">
 </head>
 <body>
 <div id="topbar">
@@ -34,7 +39,7 @@
       </div>
       <div id="installBanner" class="install-card">
         <b>Enstale Kontak</b>
-        <p>Sou Chrome, fenèt enstalasyon an parèt poukont li. Sou Android, telechaje APK la.</p>
+        <p>Sou iPhone: Pataje, puis Ajoute sou ekran kay. Apre sa, pèmèt mikwo, kamera ak notifikasyon.</p>
         <div class="row">
           <button id="installBtn" type="button">Enstale sou Chrome</button>
           <a id="apkBtn" href="kontak.apk" download="Kontak.apk">Telechaje APK</a>
@@ -148,6 +153,7 @@
         <b>Paramèt</b>
         <div class="row" style="margin-top:10px;flex-wrap:wrap">
           <button id="notifyBtn" class="ghost" type="button">Notifikasyon</button>
+          <button id="iosOpen" class="ghost" type="button">iPhone</button>
           <button id="inviteBtn" class="ghost" type="button">Envite</button>
         </div>
       </div>
@@ -225,9 +231,19 @@
     </div>
   </div>
 </div>
+<div id="iosCard" class="card" hidden>
+  <b>Pèmèt iPhone</b>
+  <p id="iosHint" class="hint">Mikwo, kamera ak notifikasyon.</p>
+  <div class="row" style="flex-wrap:wrap">
+    <button id="iosNotif" type="button">Notifikasyon</button>
+    <button id="iosMic" type="button">Mikwo</button>
+    <button id="iosCam" class="ghost" type="button">Kamera</button>
+  </div>
+  <button id="iosClose" class="ghost" type="button" style="margin-top:8px">Fèmen</button>
+</div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -254,7 +270,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=19");
+  navigator.serviceWorker.register("/sw.js?v=20");
 }
 </script>
 </body>

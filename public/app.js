@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v19";
+  const BUILD = "v20";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -117,7 +117,8 @@
     $("logoutBtn").hidden = false;
     toast(T("welcome") + " " + me.name + "!");
     paintMe();
-    enablePush();
+    if (isIos()) showIosCard();
+    else enablePush();
     send({ type: "getConversations" });
     send({ type: "getCalls" });
     if (window.__declineCall) {
@@ -828,8 +829,43 @@
     burst();
     ringTimer = setInterval(burst, outgoing ? 2500 : 1800);
   }
+  function isIos() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+  function isStandalone() {
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+  function showIosCard() {
+    const card = $("iosCard");
+    if (!card) return;
+    const hint = $("iosHint");
+    if (!isStandalone()) {
+      hint.textContent = "1. Bouton Pataje. 2. Ajoute sou ekran kay. 3. Ouvri Kontak depi ikòn nan, epi pèmèt mikwo, kamera ak notifikasyon.";
+    } else {
+      hint.textContent = "Pèmèt notifikasyon pou apèl la sonnen lè Kontak fèmen. Pèmèt mikwo ak kamera pou apèl yo.";
+    }
+    card.hidden = false;
+  }
+  async function allowMedia(video) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Telefòn sa pa bay mikwo a");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(video ? { audio: true, video: { facingMode: "user" } } : { audio: true, video: false });
+      stream.getTracks().forEach((t) => t.stop());
+      localStorage.setItem(video ? "kontak_ios_cam" : "kontak_ios_mic", "1");
+      toast(video ? "Kamera pèmèt" : "Mikwo pèmèt");
+    } catch (err) {
+      const denied = err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
+      toast(denied ? "Refize. Réglages iPhone → Kontak → Mikwo ak Kamera." : "Pa disponib");
+    }
+  }
   async function enablePush() {
-    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (isIos() && !isStandalone()) {
+      showIosCard();
+      return toast("Enstale Kontak sou ekran kay la anvan notifikasyon yo");
+    }
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return toast("Telefòn sa pa aksepte notifikasyon");
+    }
     let perm = Notification.permission;
     if (perm === "default") {
       try { perm = await Notification.requestPermission(); } catch { return; }
@@ -1108,6 +1144,11 @@
     if (!send({ type: "setProfile", name })) return toast("Pa konekte");
   };
   $("notifyBtn").onclick = () => enablePush();
+  if ($("iosOpen")) $("iosOpen").onclick = () => showIosCard();
+  if ($("iosClose")) $("iosClose").onclick = () => { $("iosCard").hidden = true; };
+  if ($("iosNotif")) $("iosNotif").onclick = () => enablePush();
+  if ($("iosMic")) $("iosMic").onclick = () => allowMedia(false);
+  if ($("iosCam")) $("iosCam").onclick = () => allowMedia(true);
   const ringBtn = $("ringBtn");
   if (ringBtn) ringBtn.onclick = () => enablePush();
   $("addBtn").onclick = () => {

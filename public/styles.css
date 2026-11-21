@@ -74,7 +74,7 @@ body.hc .msg.me{background:#b3e6b3}
 #callControls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:min(520px,100%)}
 #callControls button{min-height:48px;flex:1}
 #hangBtn{flex-basis:100%;font-size:18px}
-#dialModal{position:fixed;left:50%;top:10vh;transform:translateX(-50%);z-index:40;width:min(360px,92vw)}
+#iosCard{position:fixed;left:50%;top:12vh;transform:translateX(-50%);z-index:45;width:min(420px,92vw)}
 #dialShow{min-height:42px;font-size:28px;letter-spacing:1px;text-align:center;padding:8px;border-bottom:1px solid var(--line);margin-bottom:8px}
 #dialKeys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 #dialKeys button{min-height:52px;font-size:20px;background:#0b1226;color:var(--txt);border:1px solid var(--line)}
