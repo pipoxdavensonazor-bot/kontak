@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v16";
+  const BUILD = "v17";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -651,11 +651,11 @@
   async function startCall(audioOnly) {
     if (!currentConv || !currentPeer) return toast("Chwazi yon konvèsasyon");
     if (currentPeer.isGroup) return toast("Apèl gwoup poko pare");
-    if (pc) return;
+    if (pc) endCall(true);
     callConv = Number(currentConv);
     const wantVideo = !audioOnly;
     $("videoOverlay").hidden = false;
-    $("callStat").textContent = wantVideo ? "Ap limen kamera…" : "Ap mande mikwo…";
+    $("callStat").textContent = wantVideo ? "Ap mande kamera a…" : "Ap mande mikwo a…";
     try {
       localStream = await openMedia(wantVideo);
       const hasVideo = localStream.getVideoTracks().length > 0;
@@ -665,11 +665,18 @@
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       await limitVideoBitrate();
-      send({ type: "callOffer", convId: callConv, offer: pc.localDescription.toJSON(), audioOnly: !hasVideo });
+      if (!send({ type: "callOffer", convId: callConv, offer: pc.localDescription.toJSON(), audioOnly: !hasVideo })) {
+        $("callStat").textContent = "Pa konekte. Tann 2 segonn.";
+        return;
+      }
       startRing(true);
     } catch (err) {
-      toast("Mikwo/kamera pa disponib. Otorize yo nan navigatè a.");
-      endCall();
+      const denied = err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
+      const msg = denied
+        ? "Mikwo bloke. Nan reglaj Chrome, pèmèt mikwo pou Kontak."
+        : "Apèl pa kòmanse. " + ((err && (err.message || err.name)) || "");
+      if ($("callStat")) $("callStat").textContent = msg;
+      toast(msg);
     }
   }
 
