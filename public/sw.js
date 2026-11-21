@@ -1,4 +1,4 @@
-const CACHE = "kontak-v21";
+const CACHE = "kontak-v22";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -32,6 +32,25 @@ self.addEventListener("fetch", (event) => {
       return cached || caches.match("/index.html");
     }
   })());
+});
+
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type === "stop-ring") {
+    event.waitUntil(self.registration.getNotifications({ tag: "call" }).then((list) => list.forEach((n) => n.close())));
+    return;
+  }
+  if (data.type !== "ring") return;
+  event.waitUntil(self.registration.showNotification(data.title || "Apèl Kontak", {
+    body: data.body || "Apèl k ap antre",
+    tag: "call",
+    renotify: true,
+    requireInteraction: true,
+    silent: false,
+    vibrate: [500, 200, 500, 200, 500, 200, 800],
+    data: { kind: "call" },
+    actions: [{ action: "accept", title: "Asepte" }, { action: "decline", title: "Refize" }]
+  }));
 });
 
 self.addEventListener("push", (event) => {

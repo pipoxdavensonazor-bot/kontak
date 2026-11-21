@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v21";
+  const BUILD = "v22";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -198,6 +198,14 @@
       $("incoming").hidden = true;
       stopRing();
       if (o.type === "call-ended") toast("Apèl la fini");
+    }
+    else if (o.type === "calls") {
+      renderCalls(o.list || []);
+      const missed = (o.list || []).filter((c) => c.status === "miss" && Date.now() - Number(c.at) < 12 * 3600000);
+      if (missed.length && !window.__missTold) {
+        window.__missTold = true;
+        notify("Kontak", missed.length + " apèl rate pandan ou pa t an liy");
+      }
     }
     else if (o.type === "messages-read") onRead(o);
   }
@@ -644,6 +652,30 @@
     }
   }
 
+  function layoutCall() {
+    const box = $("videoOverlay");
+    if (!box) return;
+    const n = document.querySelectorAll("#vids .tile").length;
+    box.classList.toggle("grid", n >= 3);
+    box.classList.toggle("pip", n < 3);
+    const stream = $("remoteVid") && $("remoteVid").srcObject;
+    const video = stream && stream.getVideoTracks && stream.getVideoTracks().some((t) => t.readyState !== "ended");
+    box.classList.toggle("audio-only", !video);
+    const localVideo = localStream && localStream.getVideoTracks().some((t) => t.enabled && t.readyState !== "ended");
+    box.classList.toggle("no-cam", !localVideo);
+  }
+  function setCallName(name) {
+    if ($("remoteName") && name) $("remoteName").textContent = name;
+  }
+  function systemRing(title, body) {
+    const msg = { type: "ring", title, body };
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage(msg);
+    else if (navigator.serviceWorker) navigator.serviceWorker.ready.then((reg) => reg.active && reg.active.postMessage(msg)).catch(() => {});
+  }
+  function systemStopRing() {
+    const msg = { type: "stop-ring" };
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage(msg);
+  }
   function attachVideo(id, stream) {
     const el = $(id);
     if (!el) return;
@@ -688,6 +720,7 @@
       if (!remote.getTracks().some((t) => t.id === e.track.id)) remote.addTrack(e.track);
       attachVideo("remoteVid", remote);
       if (e.track.kind === "video") $("callStat").textContent = "Kamera konekte";
+      layoutCall();
     };
     pc.onconnectionstatechange = () => {
       if (!pc) return;
@@ -723,12 +756,14 @@
     callConv = Number(currentConv);
     const wantVideo = !audioOnly;
     $("videoOverlay").hidden = false;
+    setCallName((currentPeer && (currentPeer.name || currentPeer.phone)) || "Kontak");
+    layoutCall();
     $("callStat").textContent = wantVideo ? "Ap mande kamera a…" : "Ap mande mikwo a…";
     try {
       localStream = await openMedia(wantVideo);
       const hasVideo = localStream.getVideoTracks().length > 0;
       attachVideo("localVid", localStream);
-      $("callStat").textContent = hasVideo ? "Ap rele an videyo…" : "Ap rele an odyo…";
+      layoutCall();
       await wirePc();
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -770,7 +805,7 @@
     $("incomingFrom").textContent = (o.fromName || "Kontak") + " ap rele ou";
     $("incoming").hidden = false;
     startRing(false);
-    if (document.hidden || !document.hasFocus()) notify("Apèl Kontak", (o.fromName || "Yon moun") + " ap rele ou");
+    systemRing("Apèl Kontak", (o.fromName || "Yon moun") + " ap rele ou");
   }
 
   $("acceptBtn").onclick = async () => {
@@ -781,6 +816,7 @@
       stopRing();
       callConv = Number(o.convId) || callConv;
       $("videoOverlay").hidden = false;
+      setCallName(o.fromName || "Kontak");
       $("callStat").textContent = "Ap antre nan apèl la…";
       try {
         localStream = await openMedia(false);
@@ -801,6 +837,8 @@
     callConv = Number(o.convId);
     const wantVideo = !o.audioOnly;
     $("videoOverlay").hidden = false;
+    setCallName(o.fromName || "Kontak");
+    layoutCall();
     $("callStat").textContent = wantVideo ? "Ap limen kamera…" : "Ap reponn an odyo…";
     try {
       localStream = await openMedia(wantVideo);
@@ -845,6 +883,7 @@
     if (ringTimer) clearInterval(ringTimer);
     ringTimer = null;
     if (ringCtx) { ringCtx.close().catch(() => {}); ringCtx = null; }
+    systemStopRing();
   }
   function beep(ctx, freq, at, dur) {
     const o = ctx.createOscillator();
@@ -964,6 +1003,7 @@
     stopRing();
     extras.forEach((extra) => { try { extra.close(); } catch {} });
     extras.clear();
+    document.querySelectorAll("#vids .tile.extra").forEach((el) => el.remove());
     document.querySelectorAll("audio[id^='extraAudio']").forEach((el) => el.remove());
     if (screenTrack) { try { screenTrack.stop(); } catch {} screenTrack = null; }
     if ($("shareBtn")) $("shareBtn").textContent = "Ekran";
@@ -973,6 +1013,7 @@
     $("incoming").hidden = true;
     $("remoteVid").srcObject = null;
     $("localVid").srcObject = null;
+    layoutCall();
     if (notifyPeer && callConv) send({ type: "callHangup", convId: callConv, callId: activeCallId });
     callConv = null;
     iceQueue = [];
@@ -1214,25 +1255,45 @@
   };
   $("addClose").onclick = () => { $("addModal").hidden = true; };
 
-  async function makeExtra(id) {
-    const old = extras.get(id);
+  function extraTile(id, name) {
+    let tile = document.getElementById("tile-" + id);
+    if (!tile) {
+      tile = document.createElement("div");
+      tile.className = "tile extra voice";
+      tile.id = "tile-" + id;
+      const video = document.createElement("video");
+      video.autoplay = true;
+      video.playsInline = true;
+      const label = document.createElement("div");
+      label.className = "tileName";
+      tile.append(video, label);
+      $("vids").appendChild(tile);
+    }
+    tile.querySelector(".tileName").textContent = name || "Kontak";
+    layoutCall();
+    return tile;
+  }
+  async function makeExtra(id, name) {
+    const old = extras.get(Number(id));
     if (old) { try { old.close(); } catch {} }
     const extra = new RTCPeerConnection({ iceServers: await iceServers() });
     extra._queue = [];
     extra.onicecandidate = (e) => { if (e.candidate) send({ type: "meshIce", to: id, candidate: e.candidate.toJSON() }); };
     extra.ontrack = (e) => {
-      let audio = document.getElementById("extraAudio-" + id);
-      if (!audio) {
-        audio = document.createElement("audio");
-        audio.autoplay = true;
-        audio.id = "extraAudio-" + id;
-        document.body.appendChild(audio);
-      }
-      audio.srcObject = e.streams[0] || new MediaStream([e.track]);
+      const tile = extraTile(id, name);
+      const video = tile.querySelector("video");
+      let stream = video.srcObject;
+      if (!(stream instanceof MediaStream)) stream = new MediaStream();
+      if (!stream.getTracks().some((t) => t.id === e.track.id)) stream.addTrack(e.track);
+      video.srcObject = stream;
+      video.play().catch(() => {});
+      tile.classList.toggle("voice", e.track.kind !== "video");
       $("callStat").textContent = "Yon lòt moun rantre";
+      layoutCall();
     };
     if (localStream) localStream.getAudioTracks().forEach((t) => extra.addTrack(t, localStream));
     extras.set(Number(id), extra);
+    extraTile(id, name);
     return extra;
   }
   async function meshOfferTo(id) {

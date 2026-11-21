@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Kontak">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="styles.css?v=22">
 </head>
 <body>
 <div id="topbar">
@@ -192,10 +192,15 @@
   </div>
 </div>
 
-<div id="videoOverlay" hidden>
+<div id="videoOverlay" class="pip" hidden>
   <div id="vids">
-    <video id="remoteVid" autoplay playsinline></video>
-    <video id="localVid" autoplay playsinline muted></video>
+    <div class="tile main" id="remoteTile">
+      <video id="remoteVid" autoplay playsinline></video>
+      <div class="tileName" id="remoteName">Kontak</div>
+    </div>
+    <div class="tile self" id="localTile">
+      <video id="localVid" autoplay playsinline muted></video>
+    </div>
   </div>
   <div id="callStat" class="small">Apèl…</div>
   <div id="callControls">
@@ -250,7 +255,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -277,7 +282,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=21");
+  navigator.serviceWorker.register("/sw.js?v=22");
 }
 </script>
 </body>
