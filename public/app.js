@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v15";
+  const BUILD = "v16";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -636,8 +636,15 @@
       if (pc.connectionState === "connected") {
         const hasVideo = localStream && localStream.getVideoTracks().some((t) => t.enabled);
         $("callStat").textContent = hasVideo ? "Konekte · videyo" : "Konekte · odyo";
+        if (pc._drop) { clearTimeout(pc._drop); pc._drop = null; }
       }
-      if (pc.connectionState === "failed" || pc.connectionState === "disconnected") endCall();
+      if (pc.connectionState === "failed") endCall();
+      if (pc.connectionState === "disconnected" && !pc._drop) {
+        const dying = pc;
+        dying._drop = setTimeout(() => {
+          if (pc === dying && dying.connectionState === "disconnected") endCall();
+        }, 12000);
+      }
     };
   }
 

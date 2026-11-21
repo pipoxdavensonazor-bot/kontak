@@ -545,7 +545,16 @@ export class KontakRoom extends DurableObject {
     if (msg.type === "callOffer") {
       const peerBusy = this.busy.get(peerId);
       const meBusy = this.busy.get(meId);
-      if ((peerBusy && peerBusy !== meId) || (meBusy && meBusy !== peerId)) {
+      const peerGone = peerBusy && !this.isOnline(peerBusy);
+      const meGone = meBusy && !this.isOnline(meBusy);
+      if (peerGone) this.busy.delete(peerId);
+      if (meGone || (meBusy && meBusy !== peerId)) {
+        this.busy.delete(meId);
+        if (meBusy && this.busy.get(meBusy) === meId) this.busy.delete(meBusy);
+      }
+      const stillPeer = this.busy.get(peerId);
+      const stillMe = this.busy.get(meId);
+      if ((stillPeer && stillPeer !== meId && this.isOnline(stillPeer)) || (stillMe && stillMe !== peerId)) {
         this.send(ws, { type: "callBusy", convId: msg.convId, fromName });
         return;
       }
