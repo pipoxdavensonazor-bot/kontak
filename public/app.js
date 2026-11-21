@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v17";
+  const BUILD = "v18";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -558,6 +558,7 @@
   }
 
   let extras = new Map();
+  let pc = null, localStream = null, callConv = null, pendingOffer = null, iceQueue = [], pendingDial = null, screenTrack = null;
   let peopleCache = [];
   try { peopleCache = JSON.parse(localStorage.getItem("kontak_people") || "[]"); } catch {}
 
