@@ -1,4 +1,4 @@
-const CACHE = "kontak-v18";
+const CACHE = "kontak-v19";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -37,31 +37,38 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("push", (event) => {
   let data = { title: "Kontak", body: "Nouvo mesaj", tag: "kontak", kind: "msg" };
   try { data = Object.assign(data, event.data.json()); } catch {}
+  const call = data.kind === "call";
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const visible = windows.some((c) => c.visibilityState === "visible" && c.focused);
-    if (visible && data.kind !== "call") return;
-    await self.registration.showNotification(data.title, {
-      body: data.body,
-      tag: data.tag || "kontak",
+    if (visible && !call) return;
+    await self.registration.showNotification(data.title || "Kontak", {
+      body: data.body || "",
+      tag: call ? "call" : (data.tag || "kontak"),
       renotify: true,
+      requireInteraction: call,
+      silent: false,
       data,
-      vibrate: data.kind === "call" ? [300, 120, 300, 120, 300] : [80]
+      vibrate: call ? [500, 200, 500, 200, 500, 200, 800] : [80],
+      actions: call ? [{ action: "accept", title: "Asepte" }, { action: "decline", title: "Refize" }] : []
     });
   })());
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const data = event.notification.data || {};
+  const action = event.action || (data.kind === "call" ? "accept" : "open");
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of windows) {
       if ("focus" in client) {
         await client.focus();
-        client.postMessage({ type: "push-open", kind: event.notification.data && event.notification.data.kind });
+        client.postMessage({ type: "push-call", action, kind: data.kind });
         return;
       }
     }
-    await self.clients.openWindow("/");
+    const q = action === "decline" ? "/?call=decline" : action === "accept" ? "/?call=accept" : "/";
+    await self.clients.openWindow(q);
   })());
 });

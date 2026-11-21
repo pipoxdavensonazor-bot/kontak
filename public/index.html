@@ -124,6 +124,8 @@
     <div id="tab-calls" hidden>
       <div class="card">
         <div class="row"><b class="grow">Istorik</b><button id="dialBtn" type="button">Konpoze</button></div>
+        <p class="hint">Manke, resevwa ak soti. Telefòn nan sonnen menm si Kontak fèmen, si notifikasyon yo pèmèt.</p>
+        <button id="ringBtn" class="ghost" type="button">Aktive sonnerie</button>
         <div id="callList"></div>
       </div>
     </div>
@@ -225,7 +227,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -252,7 +254,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=18");
+  navigator.serviceWorker.register("/sw.js?v=19");
 }
 </script>
 </body>

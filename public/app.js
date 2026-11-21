@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v18";
+  const BUILD = "v19";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -22,6 +22,26 @@
   let lang = localStorage.getItem("kontak_lang") || "kr";
   const T = (k) => (STR[lang] && STR[lang][k]) || STR.kr[k] || k;
   let ws = null, me = null, currentConv = null, currentPeer = null, retry = null;
+  let autoAccept = false;
+  const callBoot = new URLSearchParams(location.search).get("call");
+  if (callBoot === "accept") autoAccept = true;
+  if (callBoot === "decline") window.__declineCall = true;
+  if (callBoot) history.replaceState({}, "", location.pathname);
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (ev) => {
+      const d = ev.data || {};
+      if (d.type !== "push-call") return;
+      if (d.action === "decline") {
+        if (!send({ type: "dismissCall" })) window.__declineCall = true;
+        return;
+      }
+      if (d.action === "accept") {
+        autoAccept = true;
+        if (pendingOffer) $("acceptBtn").click();
+        else send({ type: "replayCall" });
+      }
+    });
+  }
   let outbox = [];
   try {
     const parsed = JSON.parse(localStorage.getItem("kontak_outbox") || "[]");
@@ -99,6 +119,11 @@
     paintMe();
     enablePush();
     send({ type: "getConversations" });
+    send({ type: "getCalls" });
+    if (window.__declineCall) {
+      window.__declineCall = false;
+      send({ type: "dismissCall" });
+    }
     flushOutbox();
   }
 
@@ -694,6 +719,11 @@
       return;
     }
     pendingOffer = o;
+    if (autoAccept) {
+      autoAccept = false;
+      $("acceptBtn").click();
+      return;
+    }
     $("incomingFrom").textContent = (o.fromName || "Kontak") + " ap rele ou";
     $("incoming").hidden = false;
     startRing(false);
@@ -1007,6 +1037,9 @@
       return;
     }
     const label = { out: "Soti", in: "Resevwa", miss: "Manke" };
+    const missed = list.filter((c) => c.status === "miss").length;
+    const nav = document.querySelector('#nav [data-tab="calls"]');
+    if (nav) nav.textContent = missed ? "Apèl (" + missed + ")" : "Apèl";
     list.forEach((c) => {
       const d = document.createElement("div");
       d.className = "conv";
@@ -1075,6 +1108,8 @@
     if (!send({ type: "setProfile", name })) return toast("Pa konekte");
   };
   $("notifyBtn").onclick = () => enablePush();
+  const ringBtn = $("ringBtn");
+  if (ringBtn) ringBtn.onclick = () => enablePush();
   $("addBtn").onclick = () => {
     if (!pc && !extras.size) return toast("Pa gen apèl");
     renderAddList();

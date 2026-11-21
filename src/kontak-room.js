@@ -58,6 +58,8 @@ export class KontakRoom extends DurableObject {
         case "getCalls": return await this.handleGetCalls(ws);
         case "matchContacts": return await this.handleMatchContacts(ws, msg);
         case "callAdd": return await this.handleCallAdd(ws, msg);
+        case "dismissCall": return await this.handleDismissCall(ws);
+        case "replayCall": return await this.handleReplay(ws);
         case "meshOffer":
         case "meshAnswer":
         case "meshIce":
@@ -89,6 +91,13 @@ export class KontakRoom extends DurableObject {
       this.wsUser.delete(ws);
       const peer = this.busy.get(userId);
       if (!this.online.has(userId)) {
+        let ring = null;
+        try { ring = await this.ctx.storage.get("ring:" + userId); } catch {}
+        if (ring && Date.now() - ring.at < 50000) {
+          await this.broadcastPresence(userId, false);
+          return;
+        }
+        if (peer) await this.clearRing(peer);
         this.busy.delete(userId);
         if (peer) {
           this.busy.delete(peer);
@@ -113,9 +122,73 @@ export class KontakRoom extends DurableObject {
     this.wsUser.set(ws, userId);
   }
 
-  addOnline(userId, ws) {
+  async addOnline(userId, ws) {
     this.track(userId, ws);
-    try { ws.serializeAttachment({ userId }); } catch {}
+    let ring = null;
+    try { ring = await this.ctx.storage.get("ring:" + userId); } catch {}
+    const live = ring && Date.now() - ring.at < 50000;
+    try { ws.serializeAttachment({ userId, busyWith: live ? ring.from : null }); } catch {}
+    if (!live) return;
+    this.setBusy(ring.from, userId);
+    this.setBusy(userId, ring.from);
+    this.send(ws, ring.msg);
+  }
+
+  async saveRing(userId, from, fromName, msg) {
+    try {
+      await this.ctx.storage.put("ring:" + userId, { at: Date.now(), from, fromName, to: userId, msg });
+      const alarm = await this.ctx.storage.getAlarm();
+      if (!alarm) await this.ctx.storage.setAlarm(Date.now() + 8000);
+    } catch (e) { console.error("ring", e); }
+  }
+
+  async clearRing(userId) {
+    try { await this.ctx.storage.delete("ring:" + userId); } catch {}
+  }
+
+  async alarm() {
+    let list;
+    try { list = await this.ctx.storage.list({ prefix: "ring:" }); } catch { return; }
+    const now = Date.now();
+    let more = false;
+    for (const [key, ring] of list) {
+      if (!ring || now - ring.at > 45000) {
+        try { await this.ctx.storage.delete(key); } catch {}
+        continue;
+      }
+      await this.pushTo(ring.to, {
+        title: "Apèl Kontak",
+        body: (ring.fromName || "Yon moun") + " ap rele ou",
+        tag: "call",
+        kind: "call"
+      });
+      more = true;
+    }
+    if (more) {
+      try { await this.ctx.storage.setAlarm(Date.now() + 8000); } catch {}
+    }
+  }
+
+  async handleDismissCall(ws) {
+    const meId = this.needUser(ws);
+    let ring = null;
+    try { ring = await this.ctx.storage.get("ring:" + meId); } catch {}
+    await this.clearRing(meId);
+    this.clearBusy(meId);
+    if (ring && ring.from) {
+      this.clearBusy(ring.from);
+      this.broadcastToUser(ring.from, { type: "callDecline", from: meId, convId: ring.msg && ring.msg.convId });
+    }
+  }
+
+  async handleReplay(ws) {
+    const meId = this.needUser(ws);
+    let ring = null;
+    try { ring = await this.ctx.storage.get("ring:" + meId); } catch {}
+    if (!ring || Date.now() - ring.at > 50000) return;
+    this.setBusy(ring.from, meId);
+    this.setBusy(meId, ring.from);
+    this.send(ws, ring.msg);
   }
 
   needUser(ws) {
@@ -316,7 +389,7 @@ export class KontakRoom extends DurableObject {
     const res = await this.db.insert(schema.users).values({ name, phone, salt, hash, createdAt: Date.now() }).returning();
 
     const me = { id: res[0].id, name, phone, hasPhoto: 0 };
-    this.addOnline(me.id, ws);
+    await this.addOnline(me.id, ws);
     this.send(ws, { type: "auth-ok", user: me });
     await this.broadcastPresence(me.id, true);
   }
@@ -329,7 +402,7 @@ export class KontakRoom extends DurableObject {
     if (hash !== user.hash) throw new Error("bad-creds");
 
     const me = { id: user.id, name: user.name, phone: user.phone, hasPhoto: user.photo ? 1 : 0 };
-    this.addOnline(me.id, ws);
+    await this.addOnline(me.id, ws);
     this.send(ws, { type: "auth-ok", user: me });
     await this.broadcastPresence(me.id, true);
   }
@@ -541,37 +614,49 @@ export class KontakRoom extends DurableObject {
     if (!peerId || peerId === meId) return;
     const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
     const fromName = me ? me.name : "?";
+    let fresh = false;
 
     if (msg.type === "callOffer") {
-      const peerBusy = this.busy.get(peerId);
-      const meBusy = this.busy.get(meId);
-      const peerGone = peerBusy && !this.isOnline(peerBusy);
-      const meGone = meBusy && !this.isOnline(meBusy);
-      if (peerGone) this.busy.delete(peerId);
-      if (meGone || (meBusy && meBusy !== peerId)) {
-        this.busy.delete(meId);
-        if (meBusy && this.busy.get(meBusy) === meId) this.busy.delete(meBusy);
+      const already = this.busy.get(meId) === peerId && this.busy.get(peerId) === meId;
+      if (!already) {
+        const peerBusy = this.busy.get(peerId);
+        const meBusy = this.busy.get(meId);
+        const peerGone = peerBusy && !this.isOnline(peerBusy);
+        const meGone = meBusy && !this.isOnline(meBusy);
+        if (peerGone) this.busy.delete(peerId);
+        if (meGone || (meBusy && meBusy !== peerId)) {
+          this.busy.delete(meId);
+          if (meBusy && this.busy.get(meBusy) === meId) this.busy.delete(meBusy);
+        }
+        const stillPeer = this.busy.get(peerId);
+        const stillMe = this.busy.get(meId);
+        if ((stillPeer && stillPeer !== meId && this.isOnline(stillPeer)) || (stillMe && stillMe !== peerId)) {
+          this.send(ws, { type: "callBusy", convId: msg.convId, fromName });
+          return;
+        }
+        this.setBusy(meId, peerId);
+        this.setBusy(peerId, meId);
+        const kind = msg.audioOnly ? "audio" : "video";
+        await this.recordCall(meId, peerId, kind, "out");
+        await this.recordCall(peerId, meId, kind, "miss");
+        fresh = true;
       }
-      const stillPeer = this.busy.get(peerId);
-      const stillMe = this.busy.get(meId);
-      if ((stillPeer && stillPeer !== meId && this.isOnline(stillPeer)) || (stillMe && stillMe !== peerId)) {
-        this.send(ws, { type: "callBusy", convId: msg.convId, fromName });
-        return;
-      }
-      this.setBusy(meId, peerId);
-      this.setBusy(peerId, meId);
-      const kind = msg.audioOnly ? "audio" : "video";
-      await this.recordCall(meId, peerId, kind, "out");
-      await this.recordCall(peerId, meId, kind, "miss");
     }
-    if (msg.type === "callAnswer") await this.markAnswered(meId, peerId);
+    if (msg.type === "callAnswer") {
+      await this.markAnswered(meId, peerId);
+      await this.clearRing(meId);
+    }
     if (msg.type === "callHangup" || msg.type === "callDecline") {
       this.clearBusy(meId);
       this.clearBusy(peerId);
+      await this.clearRing(meId);
+      await this.clearRing(peerId);
     }
 
-    this.broadcastToUser(peerId, { ...msg, from: meId, fromName });
-    if (msg.type === "callOffer" && peerId > 0) {
+    const delivered = { ...msg, from: meId, fromName };
+    this.broadcastToUser(peerId, delivered);
+    if (fresh && peerId > 0) {
+      await this.saveRing(peerId, meId, fromName, delivered);
       await this.pushTo(peerId, {
         title: "Apèl Kontak",
         body: fromName + " ap rele ou",
