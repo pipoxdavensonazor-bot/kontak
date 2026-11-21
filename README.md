@@ -1,59 +1,32 @@
-# Kontak — Messagerie + Appels vidéo
+# Kontak v21
 
-Application web autonome inspirée du projet Perchance « Kontak ».
+Application web de messages et d'appels, servie par Cloudflare.
 
-## Fonctionnalités
+## Déployer
 
-- Inscription / connexion (numéro de téléphone + mot de passe)
-- Recherche de contacts
-- Conversations 1-à-1 en temps réel
-- Indicateur « ap ekri… »
-- Présence en ligne
-- Appels vidéo WebRTC (360p) et appels audio
-- Mode SAT (audio uniquement pour économiser les données)
-- File d’attente hors-ligne (messages sauvegardés localement)
-- Interface créole / français
-- Configuration TURN pour les réseaux mobiles (Ayiti)
+1. Le dépôt est déjà relié à Cloudflare Workers.
+2. Secret obligatoire, une seule fois, dans Cloudflare → Workers → kontak → Settings → Variables → Secret :
 
-## Base de données
+   Nom : `VAPID_JWK`
 
-Les données sont stockées dans **SQLite** (`kontak.db`).
+   Valeur : le JSON donné avec la version 21. Ne le commite pas.
 
-- Utilisateurs (téléphone, nom, mot de passe hashé)
-- Conversations
-- Messages
+3. La clé publique est déjà dans `wrangler.toml` (`VAPID_PUBLIC`).
+4. Redéploie. La barre doit afficher **v21**.
+5. Migration D1, si elle n'est pas déjà appliquée toute seule au premier message :
 
-Le fichier `kontak.db` est créé automatiquement au premier lancement.
+   `migrations/0003_v21.sql`
 
-## Lancer l’application
+## Ce que v21 change
 
-```bash
-cd kontak-app
-npm install
-npm start
-```
+- Notifications : clé privée hors du code, erreur visible si le secret manque.
+- Session à la place du mot de passe gardé dans le téléphone.
+- Mot de passe ancien converti en PBKDF2 à la prochaine connexion.
+- Message confirmé par le serveur avant de quitter la file.
+- Appel identifié : un étranger ne peut pas le couper.
+- Recherche dans toute la base, pas seulement 50 comptes.
+- `/turn` demande une session.
+- Mode **Rezo fèb** limite l'audio.
+- Le contenu d'un message n'est pas écrit dans la notification.
 
-Ouvrir http://localhost:3000
-
-Pour tester les appels vidéo :
-- Ouvrir deux fenêtres (normale + privée)
-- Créer deux comptes
-- Rechercher l’autre utilisateur et lancer un appel
-
-**Note** : la caméra nécessite HTTPS ou localhost.
-
-## Déploiement
-
-L’application est un simple serveur Node.js + fichiers statiques.  
-Vous pouvez la déployer sur Railway, Render, Fly.io, VPS, etc.
-
-Pour les appels sur réseaux mobiles (NAT), configurez un serveur TURN (coturn) et entrez les identifiants dans le bouton **TURN**.
-
-## Limitations MVP
-
-- Pas de chiffrement de bout en bout
-- Pas de groupes, pas de médias
-- Pas de vérification SMS (OTP)
-- Pas de push notifications
-
-Pour une version production, vous pouvez migrer vers PostgreSQL.
+Les numéros ne sont pas vérifiés par SMS. Ce n'est pas un chiffrement de bout en bout.

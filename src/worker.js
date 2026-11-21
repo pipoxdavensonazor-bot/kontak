@@ -1,4 +1,5 @@
 import { KontakRoom } from "./kontak-room.js";
+import { vapidPublicKey } from "./push.js";
 
 export { KontakRoom };
 
@@ -48,22 +49,46 @@ async function defaultIceServers(env) {
   };
 }
 
+async function sha256(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export default {
   async fetch(request, env) {
     try {
       const url = new URL(request.url);
 
+      if (url.pathname === "/vapid") {
+        try {
+          return Response.json({ key: vapidPublicKey(env) });
+        } catch {
+          return Response.json({ error: "vapid-missing" }, { status: 503 });
+        }
+      }
+
       if (url.pathname === "/turn") {
+        const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        if (!token) return new Response("auth", { status: 401 });
+        const row = await env.DB.prepare(
+          "SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?"
+        ).bind(await sha256(token), Date.now()).first();
+        if (!row) return new Response("auth", { status: 401 });
         const body = await defaultIceServers(env);
         return new Response(JSON.stringify(body), {
-          headers: {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-store"
-          }
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
         });
       }
 
       if (url.pathname === "/ws" || request.headers.get("Upgrade") === "websocket") {
+        const origin = request.headers.get("Origin");
+        if (origin) {
+          try {
+            if (new URL(origin).host !== url.host) return new Response("origin", { status: 403 });
+          } catch {
+            return new Response("origin", { status: 403 });
+          }
+        }
         const id = env.KONTAK.idFromName("global");
         return env.KONTAK.get(id).fetch(request);
       }

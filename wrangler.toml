@@ -15,6 +15,9 @@ type = "durable-object"
 storage = "sqlite"
 
 # Assets
+[vars]
+VAPID_PUBLIC = "BM5ZgU1-jTuivX7Dknfy0T6_tx6GnN6J81REwqD7mdcXT6Eo8oAGwSiLK0aTrAxmj_oB0O7aBSG5HbkUMXKYwZ0"
+
 [assets]
 directory = "./public"
 binding = "ASSETS"

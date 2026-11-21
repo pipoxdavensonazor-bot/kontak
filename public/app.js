@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v20";
+  const BUILD = "v21";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -137,9 +137,9 @@
     if (o.type === "auth-ok") {
       me = o.user;
       localStorage.setItem("kontak_phone", me.phone);
-      const pending = sessionStorage.getItem("kontak_pending_pass");
-      if (pending) {
-        localStorage.setItem("kontak_pass", pending);
+      if (o.token) {
+        localStorage.setItem("kontak_token", o.token);
+        localStorage.removeItem("kontak_pass");
         sessionStorage.removeItem("kontak_pending_pass");
       }
       afterAuth();
@@ -188,6 +188,17 @@
       paintMe();
     }
     else if (o.type === "conversations-refresh") send({ type: "getConversations" });
+    else if (o.type === "message-ack") {
+      outbox = outbox.filter((m) => m.clientId !== o.clientId);
+      localStorage.setItem("kontak_outbox", JSON.stringify(outbox));
+    }
+    else if (o.type === "call-state") { activeCallId = o.callId; }
+    else if (o.type === "callTaken" || o.type === "call-ended") {
+      pendingOffer = null;
+      $("incoming").hidden = true;
+      stopRing();
+      if (o.type === "call-ended") toast("Apèl la fini");
+    }
     else if (o.type === "messages-read") onRead(o);
   }
 
@@ -199,9 +210,11 @@
     ws = new WebSocket(proto + "//" + location.host + "/ws");
     ws.onopen = () => {
       setBar(T("connected"));
+      const token = localStorage.getItem("kontak_token");
       const phone = localStorage.getItem("kontak_phone");
       const pass = localStorage.getItem("kontak_pass");
-      if (phone && pass) send({ type: "login", phone, password: pass });
+      if (token) send({ type: "resume", token });
+      else if (phone && pass) send({ type: "login", phone, password: pass });
       else showAuth();
     };
     ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
@@ -244,24 +257,33 @@
     authError("");
   };
 
+  function fullPhone(inputId, ccId) {
+    let d = digits($(inputId).value);
+    const cc = $(ccId) ? $(ccId).value : "509";
+    if (!d) return "";
+    if (d.startsWith("00")) d = d.slice(2);
+    if (d.startsWith(cc)) return d;
+    if (d.length <= 10) return cc + d;
+    return d;
+  }
   function doLogin() {
-    const phone = digits($("loginPhoneInput").value);
+    const phone = fullPhone("loginPhoneInput", "loginCc");
     const pass = $("loginPassInput").value;
     if (phone.length < 8) return authError("Nimewo twò kout. Egzanp: 50937123456");
     if (pass.length < 4) return authError("Modpas dwe gen omwen 4 karaktè.");
     if (!send({ type: "login", phone, password: pass })) return authError("Pa konekte. Tann 2 segonn epi eseye ankò.");
-    sessionStorage.setItem("kontak_pending_pass", pass);
+    localStorage.setItem("kontak_phone", phone);
     setLoading($("loginBtn"), true);
   }
   function doRegister() {
-    const phone = digits($("regPhoneInput").value);
+    const phone = fullPhone("regPhoneInput", "regCc");
     const pass = $("regPassInput").value;
     let name = $("regNameInput").value.trim();
     if (!name) name = "Kontak " + (phone.slice(-4) || "User");
     if (phone.length < 8) return authError("Nimewo twò kout. Egzanp: 50937123456");
     if (pass.length < 4) return authError("Modpas dwe gen omwen 4 karaktè.");
     if (!send({ type: "register", name, phone, password: pass })) return authError("Pa konekte. Tann 2 segonn epi eseye ankò.");
-    sessionStorage.setItem("kontak_pending_pass", pass);
+    localStorage.setItem("kontak_phone", phone);
     setLoading($("regBtn"), true);
   }
 
@@ -270,9 +292,12 @@
   $("loginPassInput").onkeydown = (e) => { if (e.key === "Enter") doLogin(); };
   $("regPassInput").onkeydown = (e) => { if (e.key === "Enter") doRegister(); };
   $("logoutBtn").onclick = () => {
-    localStorage.removeItem("kontak_phone");
-    localStorage.removeItem("kontak_pass");
-    sessionStorage.removeItem("kontak_pending_pass");
+    send({ type: "logout" });
+    const keep = { kontak_lang: localStorage.getItem("kontak_lang"), kontak_hc: localStorage.getItem("kontak_hc") };
+    Object.keys(localStorage).forEach((k) => { if (k.startsWith("kontak_")) localStorage.removeItem(k); });
+    if (keep.kontak_lang) localStorage.setItem("kontak_lang", keep.kontak_lang);
+    if (keep.kontak_hc) localStorage.setItem("kontak_hc", keep.kontak_hc);
+    sessionStorage.clear();
     location.reload();
   };
 
@@ -471,7 +496,7 @@
         const tick = document.createElement("div");
         tick.className = "tick";
         tick.dataset.id = m.id;
-        tick.textContent = m.readAt ? "vu" : "voye";
+        tick.textContent = (currentPeer && currentPeer.isGroup) ? "voye" : (m.readAt ? "vu" : "voye");
         d.appendChild(tick);
       }
       el.appendChild(d);
@@ -491,7 +516,7 @@
     if (me && o.message && o.message.from !== me.id) {
       const looking = document.hasFocus() && !document.hidden && Number(o.convId) === Number(currentConv);
       if (looking) send({ type: "markRead", convId: Number(o.convId) });
-      else notify("Kontak", o.message.body);
+      else notify("Kontak", "Nouvo mesaj");
     }
   }
 
@@ -522,32 +547,27 @@
   function sendMsg() {
     const body = $("msgInput").value.trim();
     if (!body || !currentConv) return;
-    if (!navigator.onLine || !ws || ws.readyState !== 1) {
-      outbox.push({ convId: Number(currentConv), body });
-      localStorage.setItem("kontak_outbox", JSON.stringify(outbox));
-      toast("ap tann rezo…");
-      $("msgInput").value = "";
-      return;
-    }
-    if (send({ type: "sendMessage", convId: Number(currentConv), body })) $("msgInput").value = "";
+    const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    outbox.push({ clientId, convId: Number(currentConv), body });
+    localStorage.setItem("kontak_outbox", JSON.stringify(outbox));
+    $("msgInput").value = "";
+    flushOutbox();
+    if (!navigator.onLine || !ws || ws.readyState !== 1) toast("ap tann rezo…");
   }
 
   function flushOutbox() {
-    while (outbox.length && ws && ws.readyState === 1) {
-      const m = outbox.shift();
-      send({ type: "sendMessage", convId: Number(m.convId), body: m.body });
-    }
-    localStorage.setItem("kontak_outbox", JSON.stringify(outbox));
+    if (!ws || ws.readyState !== 1) return;
+    outbox.forEach((m) => send({ type: "sendMessage", convId: Number(m.convId), body: m.body, clientId: m.clientId }));
   }
   window.addEventListener("online", flushOutbox);
 
   function satOn() { return localStorage.getItem("kontak_sat") === "1"; }
-  $("satBtn").textContent = satOn() ? "SAT: ON" : "SAT: OFF";
+  $("satBtn").textContent = satOn() ? "Rezo fèb: ON" : "Rezo fèb: OFF";
   $("satBtn").onclick = () => {
     const on = !satOn();
     localStorage.setItem("kontak_sat", on ? "1" : "0");
-    $("satBtn").textContent = on ? "SAT: ON" : "SAT: OFF";
-    toast(on ? "Mòd SAT: odyo ~16 kbps" : "Mòd nòmal");
+    $("satBtn").textContent = on ? "Rezo fèb: ON" : "Rezo fèb: OFF";
+    toast(on ? "Rezo fèb: odyo limite, videyo koupe si sa pete" : "Mòd nòmal");
   };
 
   $("turnBtn").textContent = "TURN: ON";
@@ -570,7 +590,8 @@
   async function iceServers() {
     if (!iceCache || iceCache.exp < Date.now()) {
       try {
-        const res = await fetch("/turn");
+        const res = await fetch("/turn", { headers: { Authorization: "Bearer " + (localStorage.getItem("kontak_token") || "") } });
+        if (!res.ok) throw new Error("turn");
         const data = await res.json();
         iceCache = { exp: Date.now() + 6 * 3600 * 1000, servers: data.iceServers || [] };
       } catch {
@@ -585,6 +606,7 @@
 
   let extras = new Map();
   let pc = null, localStream = null, callConv = null, pendingOffer = null, iceQueue = [], pendingDial = null, screenTrack = null;
+  let activeCallId = null;
   let peopleCache = [];
   try { peopleCache = JSON.parse(localStorage.getItem("kontak_people") || "[]"); } catch {}
 
@@ -643,13 +665,22 @@
       params.encodings[0].maxFramerate = satOn() ? 8 : 12;
       await sender.setParameters(params);
     } catch {}
+    const audio = pc.getSenders().find((s) => s.track && s.track.kind === "audio");
+    if (audio && satOn()) {
+      try {
+        const params = audio.getParameters();
+        if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+        params.encodings[0].maxBitrate = 16000;
+        await audio.setParameters(params);
+      } catch {}
+    }
   }
 
   async function wirePc() {
     pc = new RTCPeerConnection({ iceServers: await iceServers() });
     localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
     pc.onicecandidate = (e) => {
-      if (e.candidate) send({ type: "callIce", convId: callConv, candidate: e.candidate.toJSON() });
+      if (e.candidate) send({ type: "callIce", convId: callConv, callId: activeCallId, candidate: e.candidate.toJSON() });
     };
     pc.ontrack = (e) => {
       let remote = $("remoteVid").srcObject;
@@ -668,9 +699,19 @@
       if (pc.connectionState === "failed") endCall();
       if (pc.connectionState === "disconnected" && !pc._drop) {
         const dying = pc;
-        dying._drop = setTimeout(() => {
-          if (pc === dying && dying.connectionState === "disconnected") endCall();
-        }, 12000);
+        dying._drop = setTimeout(async () => {
+          if (pc !== dying || dying.connectionState === "connected") return;
+          $("callStat").textContent = "Rekoneksyon…";
+          try {
+            if (dying.restartIce) dying.restartIce();
+            const offer = await dying.createOffer({ iceRestart: true });
+            await dying.setLocalDescription(offer);
+            send({ type: "callOffer", convId: callConv, callId: activeCallId, offer: dying.localDescription.toJSON(), reneg: true });
+          } catch {}
+          setTimeout(() => {
+            if (pc === dying && dying.connectionState !== "connected") endCall();
+          }, 12000);
+        }, 2000);
       }
     };
   }
@@ -714,12 +755,13 @@
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         await limitVideoBitrate();
-        send({ type: "callAnswer", convId: callConv, answer: pc.localDescription.toJSON() });
+        send({ type: "callAnswer", convId: callConv, callId: activeCallId || o.callId, answer: pc.localDescription.toJSON() });
         flushIce();
       }).catch(() => {});
       return;
     }
     pendingOffer = o;
+    if (o.callId) activeCallId = o.callId;
     if (autoAccept) {
       autoAccept = false;
       $("acceptBtn").click();
@@ -769,7 +811,7 @@
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await limitVideoBitrate();
-      send({ type: "callAnswer", convId: callConv, answer: pc.localDescription.toJSON() });
+      send({ type: "callAnswer", convId: callConv, callId: activeCallId || o.callId, answer: pc.localDescription.toJSON() });
       flushIce();
     } catch (err) {
       toast("Mikwo/kamera pa disponib");
@@ -778,7 +820,7 @@
   };
 
   $("declineBtn").onclick = () => {
-    if (pendingOffer) send({ type: "callDecline", convId: pendingOffer.convId });
+    if (pendingOffer) send({ type: "callDecline", convId: pendingOffer.convId, callId: pendingOffer.callId || activeCallId });
     pendingOffer = null;
     $("incoming").hidden = true;
     stopRing();
@@ -858,6 +900,19 @@
       toast(denied ? "Refize. Réglages iPhone → Kontak → Mikwo ak Kamera." : "Pa disponib");
     }
   }
+  function b64ToBuf(s) {
+    const pad = "=".repeat((4 - (s.length % 4)) % 4);
+    const bin = atob(String(s).replace(/-/g, "+").replace(/_/g, "/") + pad);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  async function loadVapid() {
+    const res = await fetch("/vapid");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.key) throw new Error(data.error || "vapid-missing");
+    return data.key;
+  }
   async function enablePush() {
     if (isIos() && !isStandalone()) {
       showIosCard();
@@ -877,12 +932,13 @@
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: b64ToBuf(VAPID_PUBLIC)
+          applicationServerKey: b64ToBuf(await loadVapid())
         });
       }
-      send({ type: "pushSubscribe", subscription: sub.toJSON() });
-    } catch {
-      toast("Enstale aplikasyon an pou resevwa apèl lè telefòn nan fèmen");
+      if (!send({ type: "pushSubscribe", subscription: sub.toJSON() })) throw new Error("offline");
+      toast("Notifikasyon aktive");
+    } catch (err) {
+      toast("Notifikasyon pa mache: " + ((err && err.message) || "erè"));
     }
   }
   document.addEventListener("visibilitychange", () => {
@@ -917,7 +973,7 @@
     $("incoming").hidden = true;
     $("remoteVid").srcObject = null;
     $("localVid").srcObject = null;
-    if (notifyPeer && callConv) send({ type: "callHangup", convId: callConv });
+    if (notifyPeer && callConv) send({ type: "callHangup", convId: callConv, callId: activeCallId });
     callConv = null;
     iceQueue = [];
     pendingOffer = null;
@@ -1158,10 +1214,10 @@
   };
   $("addClose").onclick = () => { $("addModal").hidden = true; };
 
-  function makeExtra(id) {
+  async function makeExtra(id) {
     const old = extras.get(id);
     if (old) { try { old.close(); } catch {} }
-    const extra = new RTCPeerConnection(iceConfig());
+    const extra = new RTCPeerConnection({ iceServers: await iceServers() });
     extra._queue = [];
     extra.onicecandidate = (e) => { if (e.candidate) send({ type: "meshIce", to: id, candidate: e.candidate.toJSON() }); };
     extra.ontrack = (e) => {
@@ -1180,7 +1236,7 @@
     return extra;
   }
   async function meshOfferTo(id) {
-    const extra = makeExtra(id);
+    const extra = await makeExtra(id);
     const offer = await extra.createOffer();
     await extra.setLocalDescription(offer);
     send({ type: "meshOffer", to: id, offer: extra.localDescription.toJSON() });
@@ -1195,7 +1251,7 @@
   }
   async function onMeshOffer(o) {
     if (!localStream || !o.offer) return;
-    const extra = makeExtra(o.from);
+    const extra = await makeExtra(o.from);
     await extra.setRemoteDescription(new RTCSessionDescription(o.offer));
     const queued = extra._queue.splice(0);
     for (const c of queued) { try { await extra.addIceCandidate(c); } catch {} }

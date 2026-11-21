@@ -1,15 +1,14 @@
-const VAPID_PUBLIC = "BDBX0KVOAd3jiJw1uNxM3M-zqYp1TdAdtmlw3nmkWJqnDcMrpAwQsUUG0DEMdcWZDvxwjAi91kRvm2PG_fczgR8";
-const VAPID_JWK = {
-  kty: "EC",
-  crv: "P-256",
-  d: "vctlfoDpiP1OiYN1LZ392OYxjUpk5ytRRy4GmvLT1Ho",
-  x: "MFfQpU4B3eOInDW43Ezcz7OpinVN0B22aXDeeaRYmqc",
-  y: "DcMrpAwQsUUG0DEMdcWZDvxwjAi91kRvm2PG_fczgR8"
-};
 const SUBJECT = "mailto:kontak@kontak.app";
 
-export function vapidPublicKey() {
-  return VAPID_PUBLIC;
+function vapidMaterial(env) {
+  if (!env || !env.VAPID_PUBLIC || !env.VAPID_JWK) throw new Error("vapid-missing");
+  const jwk = typeof env.VAPID_JWK === "string" ? JSON.parse(env.VAPID_JWK) : env.VAPID_JWK;
+  if (!jwk || !jwk.d) throw new Error("vapid-missing");
+  return { pub: env.VAPID_PUBLIC, jwk };
+}
+
+export function vapidPublicKey(env) {
+  return vapidMaterial(env).pub;
 }
 
 function b64urlToBytes(s) {
@@ -62,7 +61,8 @@ async function encryptPayload(p256dh, auth, payload) {
   return concat(header, cipher);
 }
 
-async function vapidAuth(endpoint) {
+async function vapidAuth(endpoint, env) {
+  const { pub, jwk } = vapidMaterial(env);
   const aud = new URL(endpoint).origin;
   const header = bytesToB64url(new TextEncoder().encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
   const body = bytesToB64url(new TextEncoder().encode(JSON.stringify({
@@ -70,17 +70,17 @@ async function vapidAuth(endpoint) {
     exp: Math.floor(Date.now() / 1000) + 12 * 3600,
     sub: SUBJECT
   })));
-  const key = await crypto.subtle.importKey("jwk", VAPID_JWK, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
   const sig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(header + "." + body)));
-  return "vapid t=" + header + "." + body + "." + bytesToB64url(sig) + ", k=" + VAPID_PUBLIC;
+  return "vapid t=" + header + "." + body + "." + bytesToB64url(sig) + ", k=" + pub;
 }
 
-export async function sendWebPush(sub, payload, urgent) {
+export async function sendWebPush(sub, payload, urgent, env) {
   const body = await encryptPayload(sub.p256dh, sub.auth, payload);
   const res = await fetch(sub.endpoint, {
     method: "POST",
     headers: {
-      Authorization: await vapidAuth(sub.endpoint),
+      Authorization: await vapidAuth(sub.endpoint, env),
       "Content-Encoding": "aes128gcm",
       "Content-Type": "application/octet-stream",
       TTL: urgent ? "120" : "86400",

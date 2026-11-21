@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { getDb, schema, eq, and, or, desc, lt } from "./db/index.js";
 import { RegisterSchema, LoginSchema, validate } from "./validation.js";
+import { sendWebPush } from "./push.js";
 
 export class KontakRoom extends DurableObject {
   constructor(ctx, env) {
@@ -8,6 +9,9 @@ export class KontakRoom extends DurableObject {
     this.online = new Map();
     this.wsUser = new Map();
     this.busy = new Map();
+    this.calls = new Map();
+    this.rates = new Map();
+    this.wsAt = new Map();
     this.db = getDb(env.DB);
     try {
       for (const sock of ctx.getWebSockets()) {
@@ -29,13 +33,31 @@ export class KontakRoom extends DurableObject {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
+    this.wsAt.set(server, Date.now());
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws, message) {
+    const raw = typeof message === "string" ? message : "";
+    if (raw.length > 32000) {
+      this.send(ws, { type: "error", error: "too-big" });
+      return;
+    }
     let msg;
-    try { msg = JSON.parse(message); } catch {
+    try { msg = JSON.parse(raw || message); } catch {
       this.send(ws, { type: "error", error: "bad-json" });
+      return;
+    }
+    if (!this.wsUser.get(ws)) {
+      const started = this.wsAt.get(ws) || Date.now();
+      if (Date.now() - started > 20000 && msg.type !== "login" && msg.type !== "register" && msg.type !== "resume") {
+        try { ws.close(4001, "auth"); } catch {}
+        return;
+      }
+    }
+    const rateKey = String(this.wsUser.get(ws) || this.wsAt.get(ws) || "x");
+    if (!this.hit(rateKey, 50, 10000)) {
+      this.send(ws, { type: "error", error: "slow-down" });
       return;
     }
 
@@ -44,6 +66,8 @@ export class KontakRoom extends DurableObject {
       switch (msg.type) {
         case "register": return await this.handleRegister(ws, msg);
         case "login": return await this.handleLogin(ws, msg);
+        case "resume": return await this.handleResume(ws, msg);
+        case "logout": return await this.handleLogout(ws);
         case "search": return await this.handleSearch(ws, msg);
         case "getConversations": return await this.handleGetConversations(ws);
         case "getOrCreateConversation": return await this.handleGetOrCreate(ws, msg);
@@ -185,7 +209,10 @@ export class KontakRoom extends DurableObject {
     const meId = this.needUser(ws);
     let ring = null;
     try { ring = await this.ctx.storage.get("ring:" + meId); } catch {}
-    if (!ring || Date.now() - ring.at > 50000) return;
+    if (!ring || Date.now() - ring.at > 50000) {
+      this.send(ws, { type: "call-ended" });
+      return;
+    }
     this.setBusy(ring.from, meId);
     this.setBusy(meId, ring.from);
     this.send(ws, ring.msg);
@@ -232,7 +259,10 @@ export class KontakRoom extends DurableObject {
           "ALTER TABLE messages ADD COLUMN read_at INTEGER DEFAULT 0",
           "CREATE TABLE IF NOT EXISTS members (conv_id INTEGER NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (conv_id, user_id))",
           "CREATE TABLE IF NOT EXISTS push_subs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL)",
-          "CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, peer_id INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, at INTEGER NOT NULL)"
+          "CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, peer_id INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, at INTEGER NOT NULL)",
+          "ALTER TABLE messages ADD COLUMN client_id TEXT DEFAULT ''",
+          "CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
+          "CREATE UNIQUE INDEX IF NOT EXISTS messages_client ON messages(conv_id, client_id) WHERE client_id != ''"
         ];
         for (const sql of sqls) {
           try { await this.env.DB.prepare(sql).run(); } catch {}
@@ -253,9 +283,11 @@ export class KontakRoom extends DurableObject {
     const payload = JSON.stringify(data);
     for (const row of rows) {
       try {
-        const status = await sendWebPush(row, payload, data.kind === "call");
+        const status = await sendWebPush(row, payload, data.kind === "call", this.env);
         if (status === 404 || status === 410) {
           await this.env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ?").bind(row.endpoint).run();
+        } else if (status < 200 || status >= 300) {
+          console.error("push-status", status);
         }
       } catch (e) {
         console.error("push", e);
@@ -369,15 +401,63 @@ export class KontakRoom extends DurableObject {
     };
   }
 
+  hit(key, limit, windowMs) {
+    const now = Date.now();
+    const rec = this.rates.get(key) || { n: 0, t: now };
+    if (now - rec.t > windowMs) { rec.n = 0; rec.t = now; }
+    rec.n += 1;
+    this.rates.set(key, rec);
+    return rec.n <= limit;
+  }
+
+  async sha256(text) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async openSession(userId) {
+    const raw = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const tokenHash = await this.sha256(raw);
+    const expires = Date.now() + 30 * 24 * 3600 * 1000;
+    await this.env.DB.prepare(
+      "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)"
+    ).bind(tokenHash, userId, expires).run();
+    return raw;
+  }
+
+  async authOk(ws, user) {
+    const me = { id: user.id, name: user.name, phone: user.phone, hasPhoto: user.photo ? 1 : 0 };
+    const token = await this.openSession(user.id);
+    await this.addOnline(me.id, ws);
+    try {
+      const att = ws.deserializeAttachment() || {};
+      att.tokenHash = await this.sha256(token);
+      ws.serializeAttachment(att);
+    } catch {}
+    this.send(ws, { type: "auth-ok", user: me, token });
+    await this.broadcastPresence(me.id, true);
+  }
+
   async hashPass(password, salt) {
-    const data = new TextEncoder().encode(salt + password);
-    const buf = await crypto.subtle.digest("SHA-256", data);
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits({
+      name: "PBKDF2",
+      salt: new TextEncoder().encode(salt),
+      iterations: 100000,
+      hash: "SHA-256"
+    }, key, 256);
+    return "pbkdf2:" + [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async legacyHash(password, salt) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt + password));
     return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   async handleRegister(ws, msg) {
     const data = validate(RegisterSchema, msg);
     const phone = data.phone;
+    if (!this.hit("reg:" + phone, 5, 3600000)) throw new Error("slow-down");
     const name = data.name.trim().slice(0, 40);
     const password = data.password;
 
@@ -387,24 +467,56 @@ export class KontakRoom extends DurableObject {
     const salt = crypto.randomUUID().replace(/-/g, "");
     const hash = await this.hashPass(password, salt);
     const res = await this.db.insert(schema.users).values({ name, phone, salt, hash, createdAt: Date.now() }).returning();
-
-    const me = { id: res[0].id, name, phone, hasPhoto: 0 };
-    await this.addOnline(me.id, ws);
-    this.send(ws, { type: "auth-ok", user: me });
-    await this.broadcastPresence(me.id, true);
+    const me = { id: res[0].id, name, phone, hasPhoto: 0, photo: "" };
+    await this.authOk(ws, me);
   }
 
   async handleLogin(ws, msg) {
     const data = validate(LoginSchema, msg);
     const user = await this.db.select().from(schema.users).where(eq(schema.users.phone, data.phone)).get();
+    if (!this.hit("login:" + data.phone, 8, 600000)) throw new Error("slow-down");
     if (!user) throw new Error("bad-creds");
-    const hash = await this.hashPass(data.password, user.salt);
-    if (hash !== user.hash) throw new Error("bad-creds");
+    let ok = false;
+    if (String(user.hash).startsWith("pbkdf2:")) ok = (await this.hashPass(data.password, user.salt)) === user.hash;
+    else ok = (await this.legacyHash(data.password, user.salt)) === user.hash;
+    if (!ok) throw new Error("bad-creds");
+    if (!String(user.hash).startsWith("pbkdf2:")) {
+      const next = await this.hashPass(data.password, user.salt);
+      await this.db.update(schema.users).set({ hash: next }).where(eq(schema.users.id, user.id));
+    }
+    await this.authOk(ws, user);
+  }
 
+  async handleResume(ws, msg) {
+    const token = String(msg.token || "");
+    if (token.length < 32) throw new Error("bad-creds");
+    const row = await this.env.DB.prepare(
+      "SELECT user_id, expires_at FROM sessions WHERE token_hash = ?"
+    ).bind(await this.sha256(token)).first();
+    if (!row || Number(row.expires_at) < Date.now()) throw new Error("bad-creds");
+    const user = await this.db.select().from(schema.users).where(eq(schema.users.id, row.user_id)).get();
+    if (!user) throw new Error("bad-creds");
     const me = { id: user.id, name: user.name, phone: user.phone, hasPhoto: user.photo ? 1 : 0 };
     await this.addOnline(me.id, ws);
-    this.send(ws, { type: "auth-ok", user: me });
+    try {
+      const att = ws.deserializeAttachment() || {};
+      att.tokenHash = await this.sha256(token);
+      ws.serializeAttachment(att);
+    } catch {}
+    this.send(ws, { type: "auth-ok", user: me, token });
     await this.broadcastPresence(me.id, true);
+  }
+
+  async handleLogout(ws) {
+    const meId = this.needUser(ws);
+    try {
+      const att = ws.deserializeAttachment();
+      if (att && att.tokenHash) {
+        await this.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(att.tokenHash).run();
+      }
+    } catch {}
+    await this.env.DB.prepare("DELETE FROM push_subs WHERE user_id = ?").bind(meId).run();
+    this.send(ws, { type: "logged-out" });
   }
 
   async handleSearch(ws, msg) {
@@ -413,16 +525,15 @@ export class KontakRoom extends DurableObject {
     const q = raw.toLowerCase();
     const qd = raw.replace(/\D/g, "");
     if (q.length < 1) return this.send(ws, { type: "search-results", results: [] });
-    const results = await this.db.select({ id: schema.users.id, name: schema.users.name, phone: schema.users.phone })
-      .from(schema.users)
-      .limit(50);
-    const picked = results.filter((u) => u.id !== meId && (
-      (u.name || "").toLowerCase().includes(q) || (qd.length >= 3 && (u.phone || "").includes(qd))
-    )).slice(0, 12);
+    const nameLike = "%" + q.replace(/[%_]/g, "") + "%";
+    const phoneLike = "%" + qd.replace(/[%_]/g, "") + "%";
+    const found = await this.env.DB.prepare(
+      "SELECT id FROM users WHERE id != ? AND (lower(name) LIKE ? OR (? != '' AND phone LIKE ?)) LIMIT 12"
+    ).bind(meId, nameLike, qd, phoneLike).all();
     const list = [];
-    for (const u of picked) {
+    for (const u of found.results || []) {
       const full = await this.db.select().from(schema.users).where(eq(schema.users.id, u.id)).get();
-      list.push(this.pub(full));
+      if (full) list.push(this.pub(full));
     }
     this.send(ws, { type: "search-results", results: list });
   }
@@ -489,13 +600,27 @@ export class KontakRoom extends DurableObject {
     const meId = this.needUser(ws);
     const convId = Number(msg.convId);
     const body = String(msg.body || "").slice(0, 2000);
+    const clientId = String(msg.clientId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
     if (!body.trim()) throw new Error("empty");
 
     const conv = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, convId)).get();
     if (!(await this.inConv(conv, meId))) throw new Error("no-conv");
 
+    if (clientId) {
+      const dup = await this.env.DB.prepare(
+        "SELECT id FROM messages WHERE conv_id = ? AND client_id = ?"
+      ).bind(convId, clientId).first();
+      if (dup) {
+        this.send(ws, { type: "message-ack", clientId, id: dup.id, convId });
+        return;
+      }
+    }
+
     const at = Date.now();
-    const res = await this.db.insert(schema.messages).values({ convId, fromId: meId, body, at, readAt: 0 }).returning();
+    const res = await this.env.DB.prepare(
+      "INSERT INTO messages (conv_id, from_id, body, at, read_at, client_id) VALUES (?, ?, ?, ?, 0, ?)"
+    ).bind(convId, meId, body, at, clientId).run();
+    const id = res.meta && res.meta.last_row_id;
     await this.db.update(schema.conversations)
       .set({ lastAt: at, lastBody: body.slice(0, 80) })
       .where(eq(schema.conversations.id, convId));
@@ -503,10 +628,16 @@ export class KontakRoom extends DurableObject {
     const payload = {
       type: "new-message",
       convId,
-      message: { id: res[0].id, convId, from: meId, body, at, readAt: 0 }
+      message: { id, convId, from: meId, body, at, readAt: 0 }
     };
+    this.send(ws, { type: "message-ack", clientId, id, convId });
     this.send(ws, payload);
-    for (const id of await this.others(conv, meId)) this.broadcastToUser(id, payload);
+    for (const peer of await this.others(conv, meId)) {
+      this.broadcastToUser(peer, payload);
+      if (!this.isOnline(peer)) {
+        await this.pushTo(peer, { title: "Kontak", body: "Nouvo mesaj", tag: "msg", kind: "msg" });
+      }
+    }
   }
 
   async handleSetProfile(ws, msg) {
@@ -591,7 +722,12 @@ export class KontakRoom extends DurableObject {
     const set = this.online.get(userId);
     if (!set) return;
     for (const sock of set) {
-      try { sock.serializeAttachment({ userId, busyWith: peerId }); } catch {}
+      try {
+        const att = sock.deserializeAttachment() || {};
+        att.userId = userId;
+        att.busyWith = peerId;
+        sock.serializeAttachment(att);
+      } catch {}
     }
   }
 
@@ -600,8 +736,40 @@ export class KontakRoom extends DurableObject {
     const set = this.online.get(userId);
     if (!set) return;
     for (const sock of set) {
-      try { sock.serializeAttachment({ userId, busyWith: null }); } catch {}
+      try {
+        const att = sock.deserializeAttachment() || {};
+        att.userId = userId;
+        att.busyWith = null;
+        sock.serializeAttachment(att);
+      } catch {}
     }
+  }
+
+  async rememberCall(call) {
+    this.calls.set(call.id, call);
+    try { await this.ctx.storage.put("call:" + call.id, call); } catch {}
+    try { await this.ctx.storage.put("pair:" + Math.min(call.from, call.to) + ":" + Math.max(call.from, call.to), call.id); } catch {}
+  }
+
+  async lookupCall(id) {
+    if (!id) return null;
+    if (this.calls.has(id)) return this.calls.get(id);
+    try {
+      const call = await this.ctx.storage.get("call:" + id);
+      if (call) this.calls.set(id, call);
+      return call || null;
+    } catch { return null; }
+  }
+
+  async pairCall(a, b) {
+    try {
+      const id = await this.ctx.storage.get("pair:" + Math.min(a, b) + ":" + Math.max(a, b));
+      return this.lookupCall(id);
+    } catch { return null; }
+  }
+
+  liveCall(call) {
+    return !!(call && call.state !== "ended" && call.state !== "declined" && Date.now() - call.at < 2 * 3600 * 1000);
   }
 
   async relayCall(ws, msg) {
@@ -615,10 +783,21 @@ export class KontakRoom extends DurableObject {
     const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
     const fromName = me ? me.name : "?";
     let fresh = false;
+    let call = msg.callId ? await this.lookupCall(String(msg.callId)) : await this.pairCall(meId, peerId);
+    if (msg.type !== "callOffer" && msg.callId && (!call || (call.from !== meId && call.to !== meId))) {
+      this.send(ws, { type: "error", error: "no-call" });
+      return;
+    }
+    if (call && call.state === "ended" && msg.type !== "callOffer") {
+      this.send(ws, { type: "call-ended", callId: call.id });
+      return;
+    }
 
     if (msg.type === "callOffer") {
-      const already = this.busy.get(meId) === peerId && this.busy.get(peerId) === meId;
-      if (!already) {
+      const same = this.liveCall(call) && ((call.from === meId && call.to === peerId) || (call.from === peerId && call.to === meId));
+      if (same) {
+        msg.callId = call.id;
+      } else {
         const peerBusy = this.busy.get(peerId);
         const meBusy = this.busy.get(meId);
         const peerGone = peerBusy && !this.isOnline(peerBusy);
@@ -634,26 +813,40 @@ export class KontakRoom extends DurableObject {
           this.send(ws, { type: "callBusy", convId: msg.convId, fromName });
           return;
         }
+        call = { id: crypto.randomUUID(), from: meId, to: peerId, convId: Number(msg.convId) || 0, state: "ringing", at: Date.now() };
+        await this.rememberCall(call);
+        msg.callId = call.id;
         this.setBusy(meId, peerId);
         this.setBusy(peerId, meId);
         const kind = msg.audioOnly ? "audio" : "video";
         await this.recordCall(meId, peerId, kind, "out");
         await this.recordCall(peerId, meId, kind, "miss");
         fresh = true;
+        this.send(ws, { type: "call-state", callId: call.id, convId: msg.convId });
       }
     }
     if (msg.type === "callAnswer") {
+      if (call) {
+        call.state = "accepted";
+        await this.rememberCall(call);
+        const mine = this.online.get(meId);
+        if (mine) for (const sock of mine) if (sock !== ws) this.send(sock, { type: "callTaken", callId: call.id });
+      }
       await this.markAnswered(meId, peerId);
       await this.clearRing(meId);
     }
     if (msg.type === "callHangup" || msg.type === "callDecline") {
+      if (call) {
+        call.state = msg.type === "callDecline" ? "declined" : "ended";
+        await this.rememberCall(call);
+      }
       this.clearBusy(meId);
       this.clearBusy(peerId);
       await this.clearRing(meId);
       await this.clearRing(peerId);
     }
 
-    const delivered = { ...msg, from: meId, fromName };
+    const delivered = { ...msg, from: meId, fromName, callId: (call && call.id) || msg.callId };
     this.broadcastToUser(peerId, delivered);
     if (fresh && peerId > 0) {
       await this.saveRing(peerId, meId, fromName, delivered);
@@ -734,6 +927,7 @@ export class KontakRoom extends DurableObject {
     const meId = this.needUser(ws);
     const to = Number(msg.to);
     if (!to || to === meId) return;
+    if (!this.busy.get(meId)) return;
     if (msg.type === "meshAnswer") await this.markAnswered(meId, to);
     const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
     this.broadcastToUser(to, { ...msg, from: meId, fromName: me ? me.name : "?" });

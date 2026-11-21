@@ -12,13 +12,13 @@
 <meta name="apple-mobile-web-app-title" content="Kontak">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=20">
+<link rel="stylesheet" href="styles.css?v=21">
 </head>
 <body>
 <div id="topbar">
   <div id="logo">Kon<span>tak</span></div>
   <div class="sp"></div>
-  <button id="satBtn" class="ghost" type="button">SAT: OFF</button>
+  <button id="satBtn" class="ghost" type="button">Rezo fèb: OFF</button>
   <button id="turnBtn" class="ghost" type="button">TURN</button>
   <button id="langBtn" class="ghost" type="button">FR</button>
   <button id="contrastBtn" class="ghost" type="button">Aa</button>
@@ -54,7 +54,10 @@
     </div>
     <div id="loginForm">
       <label>Nimewo telefòn</label>
-      <input id="loginPhoneInput" placeholder="50937123456" inputmode="tel" autocomplete="tel">
+      <div class="row">
+        <select id="loginCc" style="max-width:90px"><option value="509">+509</option><option value="1">+1</option><option value="33">+33</option><option value="1809">+1809</option></select>
+        <input id="loginPhoneInput" class="grow" placeholder="37123456" inputmode="tel" autocomplete="tel">
+      </div>
       <label>Modpas</label>
       <input id="loginPassInput" type="password" placeholder="••••••" autocomplete="current-password">
       <button id="loginBtn" class="grow" type="button" style="margin-top:12px;width:100%">Konekte</button>
@@ -63,7 +66,11 @@
       <label>Non</label>
       <input id="regNameInput" placeholder="Non ou" autocomplete="name">
       <label>Nimewo telefòn</label>
-      <input id="regPhoneInput" placeholder="50937123456" inputmode="tel" autocomplete="tel">
+      <div class="row">
+        <select id="regCc" style="max-width:90px"><option value="509">+509</option><option value="1">+1</option><option value="33">+33</option><option value="1809">+1809</option></select>
+        <input id="regPhoneInput" class="grow" placeholder="37123456" inputmode="tel" autocomplete="tel">
+      </div>
+      <p class="hint">Nimewo a poko verifye. Se yon kont, pa yon idantite telefòn.</p>
       <label>Modpas</label>
       <input id="regPassInput" type="password" placeholder="omwen 4 karaktè" autocomplete="new-password">
       <button id="regBtn" class="grow" type="button" style="margin-top:12px;width:100%">Kreye kont</button>
@@ -243,7 +250,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -270,7 +277,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=20");
+  navigator.serviceWorker.register("/sw.js?v=21");
 }
 </script>
 </body>
