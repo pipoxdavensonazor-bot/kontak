@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Kontak">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=22">
+<link rel="stylesheet" href="styles.css?v=23">
 </head>
 <body>
 <div id="topbar">
@@ -72,7 +72,7 @@
       </div>
       <p class="hint">Nimewo a poko verifye. Se yon kont, pa yon idantite telefòn.</p>
       <label>Modpas</label>
-      <input id="regPassInput" type="password" placeholder="omwen 4 karaktè" autocomplete="new-password">
+      <input id="regPassInput" type="password" placeholder="omwen 8 karaktè" minlength="8" autocomplete="new-password">
       <button id="regBtn" class="grow" type="button" style="margin-top:12px;width:100%">Kreye kont</button>
     </div>
     <p id="authError" class="hint" style="color:var(--warn);min-height:1.2em"></p>
@@ -255,7 +255,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=22"></script>
+<script src="app.js?v=23"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -282,7 +282,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=22");
+  navigator.serviceWorker.register("/sw.js?v=23");
 }
 </script>
 </body>
