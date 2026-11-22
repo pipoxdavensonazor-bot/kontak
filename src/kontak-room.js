@@ -1,7 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
 import { getDb, schema, eq, and, or, desc, lt } from "./db/index.js";
-import { RegisterSchema, LoginSchema, validate } from "./validation.js";
+import { RegisterSchema, LoginSchema, validate, parseIncoming } from "./validation.js";
 import { sendWebPush } from "./push.js";
+
+export function maskPhone(phone) {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (d.length < 6) return d ? "•••" : "";
+  return d.slice(0, 3) + "•".repeat(d.length - 5) + d.slice(-2);
+}
 
 export class KontakRoom extends DurableObject {
   constructor(ctx, env) {
@@ -12,6 +18,7 @@ export class KontakRoom extends DurableObject {
     this.calls = new Map();
     this.rates = new Map();
     this.wsAt = new Map();
+    this.seen = new Map();
     this.db = getDb(env.DB);
     try {
       for (const sock of ctx.getWebSockets()) {
@@ -62,6 +69,7 @@ export class KontakRoom extends DurableObject {
     }
 
     try {
+      msg = parseIncoming(msg);
       await this.ensureSchema();
       switch (msg.type) {
         case "register": return await this.handleRegister(ws, msg);
@@ -273,6 +281,7 @@ export class KontakRoom extends DurableObject {
   }
 
   async pushTo(userId, data) {
+    if (!this.env.VAPID_PUBLIC || !this.env.VAPID_JWK) return;
     let rows = [];
     try {
       const q = await this.env.DB.prepare("SELECT endpoint, p256dh, auth FROM push_subs WHERE user_id = ?").bind(userId).all();
@@ -302,18 +311,25 @@ export class KontakRoom extends DurableObject {
     const p256dh = sub.keys && String(sub.keys.p256dh || "");
     const auth = sub.keys && String(sub.keys.auth || "");
     if (!endpoint.startsWith("https://") || !p256dh || !auth) return;
+    const previous = String(msg.previous || "");
+    if (previous && previous !== endpoint) {
+      await this.env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ? AND user_id = ?").bind(previous, meId).run();
+    }
     await this.env.DB.prepare(
       "INSERT INTO push_subs (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth"
     ).bind(meId, endpoint, p256dh, auth).run();
     this.send(ws, { type: "push-ok" });
   }
 
-  pub(user, withPhoto) {
+  // Phone numbers are private: a full number is only returned when the caller
+  // already knows it (exact search, contacts match, dial) or the person has
+  // written to them. Everything else gets a masked number.
+  pub(user, withPhoto, fullPhone = false) {
     if (!user) return null;
     const out = {
       id: user.id,
       name: user.name,
-      phone: user.phone,
+      phone: fullPhone ? user.phone : maskPhone(user.phone),
       online: this.isOnline(user.id),
       hasPhoto: user.photo ? 1 : 0
     };
@@ -364,7 +380,7 @@ export class KontakRoom extends DurableObject {
     return [...map.values()].sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
   }
 
-  async summarize(c, meId) {
+  async summarize(c, meId, known) {
     const last = await this.db.select().from(schema.messages)
       .where(eq(schema.messages.convId, c.id))
       .orderBy(desc(schema.messages.id))
@@ -394,11 +410,46 @@ export class KontakRoom extends DurableObject {
     return {
       id: c.id,
       isGroup: false,
-      peer: peer ? this.pub(peer) : { id: peerId, name: "?", phone: "", online: false, hasPhoto: 0 },
+      peer: peer ? this.pub(peer, false, !!(known && known.has(peer.id))) : { id: peerId, name: "?", phone: "", online: false, hasPhoto: 0 },
       lastAt: c.lastAt,
       lastBody: c.lastBody,
       seen
     };
+  }
+
+  // Ids of people who sent `meId` at least one message in a direct conversation.
+  async knownPeers(meId) {
+    const q = await this.env.DB.prepare(
+      "SELECT DISTINCT m.from_id AS id FROM messages m JOIN conversations c ON c.id = m.conv_id " +
+      "WHERE COALESCE(c.is_group, 0) = 0 AND (c.user_a = ? OR c.user_b = ?) AND m.from_id != ?"
+    ).bind(meId, meId, meId).all();
+    return new Set((q.results || []).map((r) => r.id));
+  }
+
+  markSeen(userId, ids) {
+    if (!userId) return;
+    let set = this.seen.get(userId);
+    if (!set) { set = new Set(); this.seen.set(userId, set); }
+    for (const id of ids) {
+      set.add(Number(id));
+      if (set.size > 500) set.delete(set.values().next().value);
+    }
+  }
+
+  // A profile photo is visible to people who share a conversation (direct or
+  // group) with its owner, or who found the owner via search/contacts/call.
+  async mayView(meId, otherId) {
+    if (meId === otherId) return true;
+    const seen = this.seen.get(meId);
+    if (seen && seen.has(otherId)) return true;
+    const direct = await this.env.DB.prepare(
+      "SELECT 1 AS ok FROM conversations WHERE (user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?) LIMIT 1"
+    ).bind(meId, otherId, otherId, meId).first();
+    if (direct) return true;
+    const group = await this.env.DB.prepare(
+      "SELECT 1 AS ok FROM members a JOIN members b ON a.conv_id = b.conv_id WHERE a.user_id = ? AND b.user_id = ? LIMIT 1"
+    ).bind(meId, otherId).first();
+    return !!group;
   }
 
   hit(key, limit, windowMs) {
@@ -524,29 +575,41 @@ export class KontakRoom extends DurableObject {
     const raw = String(msg.q || "").trim();
     const q = raw.toLowerCase();
     const qd = raw.replace(/\D/g, "");
-    if (q.length < 1) return this.send(ws, { type: "search-results", results: [] });
-    const nameLike = "%" + q.replace(/[%_]/g, "") + "%";
-    const phoneLike = "%" + qd.replace(/[%_]/g, "") + "%";
-    const found = await this.env.DB.prepare(
-      "SELECT id FROM users WHERE id != ? AND (lower(name) LIKE ? OR (? != '' AND phone LIKE ?)) LIMIT 12"
-    ).bind(meId, nameLike, qd, phoneLike).all();
     const list = [];
-    for (const u of found.results || []) {
-      const full = await this.db.select().from(schema.users).where(eq(schema.users.id, u.id)).get();
-      if (full) list.push(this.pub(full));
+    const ids = new Set();
+    // Phone search: exact number (or its last 8+ digits), never a partial prefix scan.
+    if (qd.length >= 8 && qd.length === raw.replace(/[\s+().-]/g, "").length) {
+      const byPhone = await this.env.DB.prepare(
+        "SELECT id FROM users WHERE id != ? AND (phone = ? OR phone LIKE ?) LIMIT 5"
+      ).bind(meId, qd, "%" + qd).all();
+      for (const u of byPhone.results || []) {
+        const full = await this.db.select().from(schema.users).where(eq(schema.users.id, u.id)).get();
+        if (full && !ids.has(full.id)) { ids.add(full.id); list.push(this.pub(full, false, true)); }
+      }
+    } else if (q.replace(/[%_]/g, "").length >= 2) {
+      const nameLike = "%" + q.replace(/[%_]/g, "") + "%";
+      const byName = await this.env.DB.prepare(
+        "SELECT id FROM users WHERE id != ? AND lower(name) LIKE ? LIMIT 12"
+      ).bind(meId, nameLike).all();
+      for (const u of byName.results || []) {
+        const full = await this.db.select().from(schema.users).where(eq(schema.users.id, u.id)).get();
+        if (full && !ids.has(full.id)) { ids.add(full.id); list.push(this.pub(full)); }
+      }
     }
+    this.markSeen(meId, ids);
     this.send(ws, { type: "search-results", results: list });
   }
 
   async handleGetConversations(ws) {
     const meId = this.needUser(ws);
     const convs = await this.convsFor(meId);
+    const known = await this.knownPeers(meId);
     const list = [];
-    for (const c of convs) list.push(await this.summarize(c, meId));
+    for (const c of convs) list.push(await this.summarize(c, meId, known));
     this.send(ws, { type: "conversations", list });
   }
 
-  async handleGetOrCreate(ws, msg) {
+  async handleGetOrCreate(ws, msg, knowsPhone = false) {
     const meId = this.needUser(ws);
     const peerId = Number(msg.peerId);
     if (!peerId || peerId === meId) throw new Error("no-peer");
@@ -562,14 +625,16 @@ export class KontakRoom extends DurableObject {
       const res = await this.db.insert(schema.conversations).values({ userA: lo, userB: hi }).returning();
       conv = res[0];
     }
-    this.send(ws, { type: "conversation", id: conv.id, peer: this.pub(peer) });
+    const full = knowsPhone || (await this.knownPeers(meId)).has(peer.id);
+    this.send(ws, { type: "conversation", id: conv.id, peer: this.pub(peer, false, full) });
   }
 
   async handleDial(ws, msg) {
     const phone = String(msg.phone || "").replace(/\D/g, "");
     const peer = await this.db.select().from(schema.users).where(eq(schema.users.phone, phone)).get();
     if (!peer) throw new Error("no-peer");
-    return this.handleGetOrCreate(ws, { peerId: peer.id });
+    this.markSeen(this.needUser(ws), [peer.id]);
+    return this.handleGetOrCreate(ws, { peerId: peer.id }, true);
   }
 
   async handleGetMessages(ws, msg) {
@@ -651,13 +716,17 @@ export class KontakRoom extends DurableObject {
     if (!Object.keys(patch).length) return;
     await this.db.update(schema.users).set(patch).where(eq(schema.users.id, meId));
     const user = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
-    this.send(ws, { type: "profile-ok", user: this.pub(user, true) });
+    this.send(ws, { type: "profile-ok", user: this.pub(user, true, true) });
   }
 
   async handleGetPhoto(ws, msg) {
-    this.needUser(ws);
+    const meId = this.needUser(ws);
     const id = Number(msg.id);
     if (!id) return;
+    if (!(await this.mayView(meId, id))) {
+      this.send(ws, { type: "photo", id, photo: "" });
+      return;
+    }
     const user = await this.db.select().from(schema.users).where(eq(schema.users.id, id)).get();
     const photo = user && user.photo && user.photo.length <= 80000 ? user.photo : "";
     this.send(ws, { type: "photo", id, photo });
@@ -881,7 +950,9 @@ export class KontakRoom extends DurableObject {
     const q = await this.env.DB.prepare(
       "SELECT c.id, c.peer_id as peerId, c.kind, c.status, c.at, u.name, u.phone FROM calls c LEFT JOIN users u ON u.id = c.peer_id WHERE c.user_id = ? ORDER BY c.id DESC LIMIT 40"
     ).bind(meId).all();
-    this.send(ws, { type: "calls", list: q.results || [] });
+    const known = await this.knownPeers(meId);
+    const list = (q.results || []).map((r) => ({ ...r, phone: known.has(r.peerId) ? r.phone : maskPhone(r.phone) }));
+    this.send(ws, { type: "calls", list });
   }
 
   async handleMatchContacts(ws, msg) {
@@ -895,6 +966,7 @@ export class KontakRoom extends DurableObject {
     const list = (q.results || []).filter((u) => u.id !== meId).map((u) => ({
       id: u.id, name: u.name, phone: u.phone, online: this.isOnline(u.id), hasPhoto: 0
     }));
+    this.markSeen(meId, list.map((u) => u.id));
     this.send(ws, { type: "contacts", list });
   }
 
@@ -913,6 +985,8 @@ export class KontakRoom extends DurableObject {
     }
     await this.recordCall(meId, to, "audio", "out");
     await this.recordCall(to, meId, "audio", "miss");
+    this.markSeen(to, people.map((p) => p.id));
+    this.markSeen(meId, [to]);
     this.broadcastToUser(to, {
       type: "callInvite",
       from: meId,
@@ -929,6 +1003,7 @@ export class KontakRoom extends DurableObject {
     if (!to || to === meId) return;
     if (!this.busy.get(meId)) return;
     if (msg.type === "meshAnswer") await this.markAnswered(meId, to);
+    this.markSeen(to, [meId]);
     const me = await this.db.select().from(schema.users).where(eq(schema.users.id, meId)).get();
     this.broadcastToUser(to, { ...msg, from: meId, fromName: me ? me.name : "?" });
   }
