@@ -3,3 +3,11 @@ kontak.db
 kontak.db-wal
 kontak.db-shm
 *.log
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env*
+*.pem
+vapid*.json
+coverage/
