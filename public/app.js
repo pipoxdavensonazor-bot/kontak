@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v22";
+  const BUILD = "v23";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -16,7 +16,9 @@
     "photo-big": "Foto a twò lou. Chwazi yon pi piti.",
     "group-need-people": "Mete omwen yon nimewo ki deja gen kont.",
     "Nimewo twò kout (8-15 chif)": "Nimewo twò kout. Mete kòd peyi a, egzanp 50937123456.",
-    "Modpas omwen 4 karaktè": "Modpas dwe gen omwen 4 karaktè."
+    "Modpas omwen 8 karaktè": "Modpas dwe gen omwen 8 karaktè.",
+    "bad-input": "Done yo pa bon.",
+    "unknown-type": "Mete Kontak ajou (rechaje paj la)."
   };
 
   let lang = localStorage.getItem("kontak_lang") || "kr";
@@ -278,7 +280,7 @@
     const phone = fullPhone("loginPhoneInput", "loginCc");
     const pass = $("loginPassInput").value;
     if (phone.length < 8) return authError("Nimewo twò kout. Egzanp: 50937123456");
-    if (pass.length < 4) return authError("Modpas dwe gen omwen 4 karaktè.");
+    if (pass.length < 1) return authError("Mete modpas ou.");
     if (!send({ type: "login", phone, password: pass })) return authError("Pa konekte. Tann 2 segonn epi eseye ankò.");
     localStorage.setItem("kontak_phone", phone);
     setLoading($("loginBtn"), true);
@@ -289,7 +291,7 @@
     let name = $("regNameInput").value.trim();
     if (!name) name = "Kontak " + (phone.slice(-4) || "User");
     if (phone.length < 8) return authError("Nimewo twò kout. Egzanp: 50937123456");
-    if (pass.length < 4) return authError("Modpas dwe gen omwen 4 karaktè.");
+    if (pass.length < 8) return authError("Modpas dwe gen omwen 8 karaktè.");
     if (!send({ type: "register", name, phone, password: pass })) return authError("Pa konekte. Tann 2 segonn epi eseye ankò.");
     localStorage.setItem("kontak_phone", phone);
     setLoading($("regBtn"), true);
@@ -946,6 +948,15 @@
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
   }
+  function sameVapid(sub, key) {
+    const have = sub && sub.options && sub.options.applicationServerKey;
+    if (have) {
+      const a = new Uint8Array(have);
+      const b = b64ToBuf(key);
+      return a.length === b.length && a.every((v, i) => v === b[i]);
+    }
+    return localStorage.getItem("kontak_vapid") === key;
+  }
   async function loadVapid() {
     const res = await fetch("/vapid");
     const data = await res.json().catch(() => ({}));
@@ -967,14 +978,23 @@
     if (perm !== "granted") return;
     try {
       const reg = await navigator.serviceWorker.ready;
+      const key = await loadVapid();
       let sub = await reg.pushManager.getSubscription();
+      let previous = null;
+      if (sub && !sameVapid(sub, key)) {
+        // Server key rotated: the old subscription can no longer be used.
+        previous = sub.endpoint;
+        try { await sub.unsubscribe(); } catch {}
+        sub = null;
+      }
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: b64ToBuf(await loadVapid())
+          applicationServerKey: b64ToBuf(key)
         });
       }
-      if (!send({ type: "pushSubscribe", subscription: sub.toJSON() })) throw new Error("offline");
+      localStorage.setItem("kontak_vapid", key);
+      if (!send({ type: "pushSubscribe", subscription: sub.toJSON(), previous })) throw new Error("offline");
       toast("Notifikasyon aktive");
     } catch (err) {
       toast("Notifikasyon pa mache: " + ((err && err.message) || "erè"));

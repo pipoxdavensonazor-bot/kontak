@@ -14,10 +14,12 @@ class_name = "KontakRoom"
 type = "durable-object"
 storage = "sqlite"
 
-# Assets
-[vars]
-VAPID_PUBLIC = "BM5ZgU1-jTuivX7Dknfy0T6_tx6GnN6J81REwqD7mdcXT6Eo8oAGwSiLK0aTrAxmj_oB0O7aBSG5HbkUMXKYwZ0"
+# Secrets (never in this file): set with `npx wrangler secret put <NAME>`
+#   VAPID_PUBLIC, VAPID_JWK        -> push notifications (npm run vapid:gen)
+#   TURN_KEY_ID, TURN_API_TOKEN    -> optional Cloudflare Calls TURN (STUN only without them)
+# Local dev: put them in .dev.vars (git-ignored).
 
+# Assets
 [assets]
 directory = "./public"
 binding = "ASSETS"
@@ -26,6 +28,6 @@ run_worker_first = true
 # D1 database
 [[d1_databases]]
 binding = "DB"
-database_name = "kontak-db"
+database_name = "kontak"
 database_id = "54fcd242-55db-4a79-be1e-21ee6a62b159"
 migrations_dir = "migrations"

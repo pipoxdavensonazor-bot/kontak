@@ -27,9 +27,33 @@ export const messages = sqliteTable("messages", {
   body: text("body").notNull(),
   at: integer("at").notNull(),
   readAt: integer("read_at").default(0),
+  clientId: text("client_id").default(""),
 });
 
 export const members = sqliteTable("members", {
   convId: integer("conv_id").notNull(),
   userId: integer("user_id").notNull(),
+});
+
+export const sessions = sqliteTable("sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: integer("user_id").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});
+
+export const pushSubs = sqliteTable("push_subs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull(),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+});
+
+export const calls = sqliteTable("calls", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull(),
+  peerId: integer("peer_id").notNull(),
+  kind: text("kind").notNull(),
+  status: text("status").notNull(),
+  at: integer("at").notNull(),
 });

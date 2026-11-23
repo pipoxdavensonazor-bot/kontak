@@ -3,50 +3,56 @@ import { vapidPublicKey } from "./push.js";
 
 export { KontakRoom };
 
-const TURN_SECRET = "openrelayprojectsecret";
-const TURN_HOST = "staticauth.openrelay.metered.ca";
+const STUN_ONLY = {
+  iceServers: [{ urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] }]
+};
 
-async function defaultIceServers(env) {
+let warnedNoTurn = false;
+
+// Cloudflare Calls TURN when TURN_KEY_ID / TURN_API_TOKEN secrets are set,
+// otherwise STUN only (calls still work on most networks, not behind strict NAT).
+export async function iceServersFor(env) {
   if (env.TURN_KEY_ID && env.TURN_API_TOKEN) {
-    const res = await fetch(
-      `https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.TURN_API_TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ ttl: 86400 })
+    try {
+      const res = await fetch(
+        `https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.TURN_API_TOKEN}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ ttl: 86400 })
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data.iceServers) ? data.iceServers : data.iceServers ? [data.iceServers] : [];
+        if (list.length) return { iceServers: list, turn: true };
       }
-    );
-    if (res.ok) return res.json();
+      console.warn("turn: Cloudflare Calls credentials request failed", res.status);
+    } catch (e) {
+      console.warn("turn: Cloudflare Calls unreachable", e && e.message);
+    }
+  } else if (!warnedNoTurn) {
+    warnedNoTurn = true;
+    console.warn("turn: TURN_KEY_ID / TURN_API_TOKEN not set, serving STUN only");
   }
+  return { ...STUN_ONLY, turn: false };
+}
 
-  const username = String(Math.floor(Date.now() / 1000) + 12 * 3600);
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(TURN_SECRET),
-    { name: "HMAC", hash: "SHA-1" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(username));
-  const credential = btoa(String.fromCharCode(...new Uint8Array(sig)));
-  return {
-    iceServers: [
-      { urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] },
-      {
-        username,
-        credential,
-        urls: [
-          `turn:${TURN_HOST}:80`,
-          `turn:${TURN_HOST}:80?transport=tcp`,
-          `turn:${TURN_HOST}:443`,
-          `turns:${TURN_HOST}:443?transport=tcp`
-        ]
-      }
-    ]
-  };
+function isUpgrade(request) {
+  return String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket";
+}
+
+function originAllowed(request, url, env) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return false;
+  let host;
+  try { host = new URL(origin).host; } catch { return false; }
+  if (host === url.host) return true;
+  const extra = String(env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return extra.some((o) => { try { return new URL(o).host === host; } catch { return false; } });
 }
 
 async function sha256(text) {
@@ -61,9 +67,9 @@ export default {
 
       if (url.pathname === "/vapid") {
         try {
-          return Response.json({ key: vapidPublicKey(env) });
+          return Response.json({ key: vapidPublicKey(env) }, { headers: { "Cache-Control": "no-store" } });
         } catch {
-          return Response.json({ error: "vapid-missing" }, { status: 503 });
+          return Response.json({ error: "vapid-missing" }, { status: 503, headers: { "Cache-Control": "no-store" } });
         }
       }
 
@@ -74,21 +80,17 @@ export default {
           "SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?"
         ).bind(await sha256(token), Date.now()).first();
         if (!row) return new Response("auth", { status: 401 });
-        const body = await defaultIceServers(env);
+        const body = await iceServersFor(env);
         return new Response(JSON.stringify(body), {
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
         });
       }
 
-      if (url.pathname === "/ws" || request.headers.get("Upgrade") === "websocket") {
-        const origin = request.headers.get("Origin");
-        if (origin) {
-          try {
-            if (new URL(origin).host !== url.host) return new Response("origin", { status: 403 });
-          } catch {
-            return new Response("origin", { status: 403 });
-          }
+      if (url.pathname === "/ws" || isUpgrade(request)) {
+        if (!isUpgrade(request)) {
+          return new Response("Expected WebSocket", { status: 426 });
         }
+        if (!originAllowed(request, url, env)) return new Response("origin", { status: 403 });
         const id = env.KONTAK.idFromName("global");
         return env.KONTAK.get(id).fetch(request);
       }
