@@ -1,4 +1,4 @@
-# Kontak v26
+# Kontak v27
 
 Messagerie temps réel et appels audio/vidéo (WebRTC), en créole haïtien.
 Servie par **Cloudflare Workers** : un Worker (`src/worker.js`), un Durable Object
@@ -6,6 +6,14 @@ Servie par **Cloudflare Workers** : un Worker (`src/worker.js`), un Durable Obje
 (`kontak-media`, notes vocales et photos) et les fichiers statiques de `public/`.
 
 Production : https://kontak.pipoxdavensonazor.workers.dev
+
+## Identité visuelle (v27)
+
+Logo carré (K blanc et point vert `#1EBB62` sur fond marine `#0C1C36`), favicon SVG + ICO,
+`apple-touch-icon` 180px, icônes PWA 192/512 (`any`) et `maskable-512.png` (zone sûre).
+Les couleurs et la forme du K sont reprises de l’ancien `icon-512.png` (qui n’était pas carré).
+Pour régénérer les fichiers : `python3 scripts/generate-icons.py`.
+
 
 ## Démarrer en local
 

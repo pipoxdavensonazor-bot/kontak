@@ -11,3 +11,6 @@ kontak.db-shm
 *.pem
 vapid*.json
 coverage/
+
+__pycache__/
+*.pyc

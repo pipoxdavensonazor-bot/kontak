@@ -1,7 +1,24 @@
-const CACHE = "kontak-v26";
+const CACHE = "kontak-v27";
+const PRECACHE = [
+  "/",
+  "/index.html",
+  "/styles.css?v=27",
+  "/app.js?v=27",
+  "/manifest.json",
+  "/logo.svg",
+  "/favicon.svg",
+  "/favicon.ico",
+  "/favicon-32.png",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/maskable-512.png"
+];
 
-self.addEventListener("install", () => {
-  self.skipWaiting();
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (event) => {

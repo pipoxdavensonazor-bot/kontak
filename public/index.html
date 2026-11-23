@@ -5,18 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kontak — Mesajri ak Apèl Videyo</title>
 <meta name="description" content="Messagerie temps réel et appels vidéo pour la communauté haïtienne">
-<meta name="theme-color" content="#0f172a">
+<meta name="theme-color" content="#0C1C36">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Kontak">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=26">
+<link rel="stylesheet" href="styles.css?v=27">
 </head>
 <body>
 <div id="topbar">
-  <div id="logo">Kon<span>tak</span></div>
+  <div id="logo"><img class="brand-mark" src="logo.svg" width="28" height="28" alt="">Kon<span>tak</span></div>
   <div class="sp"></div>
   <button id="satBtn" class="ghost" type="button">Rezo fèb: OFF</button>
   <button id="turnBtn" class="ghost" type="button">TURN</button>
@@ -28,7 +30,7 @@
 <div id="app">
   <div id="authView">
     <section id="hero">
-      <div class="mark">Kon<span>tak</span></div>
+      <div class="mark"><img class="brand-mark" src="logo.svg" width="52" height="52" alt="">Kon<span>tak</span></div>
       <h1>Pale ak moun ou yo, kote yo ye.</h1>
       <p>Mesaj, apèl odyo ak videyo. Pou Ayiti, epi pou moun ki aletranje. Li mache sou rezo fèb.</p>
       <div class="pills">
@@ -321,7 +323,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=26"></script>
+<script src="app.js?v=27"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -348,7 +350,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=26");
+  navigator.serviceWorker.register("/sw.js?v=27");
 }
 </script>
 </body>

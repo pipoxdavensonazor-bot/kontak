@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Kontak">
+  <rect width="512" height="512" rx="96.000" ry="96.000" fill="#0C1C36"/>
+  <polygon fill="#FFFFFF" points="112.873,64.000 197.607,64.000 197.607,202.977 299.800,64.000 394.708,64.000 250.909,252.077 399.249,447.365 299.783,447.365 197.607,304.653 197.607,447.365 112.873,447.365"/>
+  <circle fill="#1EBB62" cx="317.567" cy="291.861" r="65.693"/>
+</svg>
