@@ -4,11 +4,30 @@ import worker, { iceServersFor } from "../src/worker.js";
 import { call, connect, register, ORIGIN } from "./helpers.js";
 
 describe("HTTP endpoints", () => {
-  it("serves the app shell with build v27", async () => {
+  it("serves the app shell with build v28", async () => {
     const res = await call("/");
     expect(res.status).toBe(200);
     const app = await (await call("/app.js")).text();
-    expect(app).toContain('BUILD = "v27"');
+    expect(app).toContain('BUILD = "v28"');
+    expect(app).toContain('console.info("Kontak"');
+    expect(app).not.toContain('" · " + BUILD');
+  });
+
+  it("exposes the build on /version only, not in the UI", async () => {
+    const res = await call("/version");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ build: "v28" });
+    const html = await (await call("/")).text();
+    expect(html).not.toContain("Dekonekte");
+    expect(html).not.toContain(" · v28");
+    expect(html).not.toContain("BUILD");
+    expect(html).not.toContain("Mòd SAT");
+    expect(html).not.toContain("Mode SAT");
+    expect(html).not.toContain("turnBtn");
+    expect(html).not.toContain("TURN (coturn)");
+    expect(html).not.toContain('class="pills"');
+    expect(html).toContain('id="menuBtn"');
+    expect(html).toContain('id="connBar"');
   });
 
   it("/vapid returns the public key from the secret", async () => {
@@ -62,9 +81,9 @@ describe("HTTP endpoints", () => {
 });
 
 describe("service worker", () => {
-  it("uses cache v27 and never caches /media or /verify", async () => {
+  it("uses cache v28 and never caches /media or /verify", async () => {
     const sw = await (await call("/sw.js")).text();
-    expect(sw).toContain('"kontak-v27"');
+    expect(sw).toContain('"kontak-v28"');
     expect(sw).toContain('url.pathname.startsWith("/media")');
     expect(sw).toContain('url.pathname.startsWith("/verify")');
   });

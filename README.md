@@ -1,4 +1,4 @@
-# Kontak v27
+# Kontak v28
 
 Messagerie temps réel et appels audio/vidéo (WebRTC), en créole haïtien.
 Servie par **Cloudflare Workers** : un Worker (`src/worker.js`), un Durable Object
@@ -13,6 +13,15 @@ Logo carré (K blanc et point vert `#1EBB62` sur fond marine `#0C1C36`), favicon
 `apple-touch-icon` 180px, icônes PWA 192/512 (`any`) et `maskable-512.png` (zone sûre).
 Les couleurs et la forme du K sont reprises de l’ancien `icon-512.png` (qui n’était pas carré).
 Pour régénérer les fichiers : `python3 scripts/generate-icons.py`.
+
+## Interface (v28)
+
+Le numéro de version n’est plus affiché dans l’interface (il reste dans le cache
+du service worker, `console` et `GET /version`). La barre de connexion n’apparaît
+qu’en cas de problème, en créole simple. Les pastilles marketing (« Mòd SAT », etc.),
+le pied de page technique et le bouton TURN ont été retirés ; TURN reste actif
+côté serveur. Langue, contraste et mode « Rezo fèb » sont dans le menu Paramèt.
+
 
 
 ## Démarrer en local

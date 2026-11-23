@@ -1,10 +1,11 @@
 (function () {
   "use strict";
-  const BUILD = "v27";
+  const BUILD = "v28";
+  try { console.info("Kontak", BUILD); } catch {}
   const $ = (id) => document.getElementById(id);
   const STR = {
-    kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
-    fr: { connecting: "Connexion…", connected: "Connecté", offline: "Déconnecté", login: "Se connecter", register: "Créer un compte", send: "Envoyer", type: "Écrire un message…", search: "Rechercher nom ou numéro…", welcome: "Bienvenue", typing: "écrit…", call: "Appel vidéo", audio: "Appel audio", loading: "Attente…" }
+    kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Pa gen koneksyon. Ap eseye ankò…", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
+    fr: { connecting: "Connexion…", connected: "Connecté", offline: "Pas de connexion. Nouvelle tentative…", login: "Se connecter", register: "Créer un compte", send: "Envoyer", type: "Écrire un message…", search: "Rechercher nom ou numéro…", welcome: "Bienvenue", typing: "écrit…", call: "Appel vidéo", audio: "Appel audio", loading: "Attente…" }
   };
   const ERR = {
     "phone-taken": "Nimewo sa deja gen yon kont. Konekte.",
@@ -104,10 +105,21 @@
     $("langBtn").textContent = lang === "kr" ? "FR" : "KR";
   }
 
-  function setBar(txt, bad) {
-    $("connBar").textContent = txt + " · " + BUILD;
-    $("connBar").style.borderColor = bad ? "var(--warn)" : "var(--line)";
+  function setBar(kind) {
+    const el = $("connBar");
+    if (!el) return;
+    // kind: "ok" | "connecting" | "offline"
+    // Hide while healthy or on the first connection attempt. Only surface a
+    // problem in plain language — never the build number.
+    if (kind === "ok" || (kind === "connecting" && !hadSocketError)) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    el.hidden = false;
+    el.textContent = T("offline");
   }
+  let hadSocketError = false;
 
   function send(obj) {
     if (ws && ws.readyState === 1) {
@@ -229,13 +241,13 @@
   }
 
   function connect() {
-    setBar(T("connecting"));
+    setBar("connecting");
     if (retry) clearTimeout(retry);
     try { if (ws) ws.close(); } catch {}
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(proto + "//" + location.host + "/ws");
     ws.onopen = () => {
-      setBar(T("connected"));
+      setBar("ok");
       const token = localStorage.getItem("kontak_token");
       const phone = localStorage.getItem("kontak_phone");
       const pass = localStorage.getItem("kontak_pass");
@@ -245,18 +257,38 @@
     };
     ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
     ws.onclose = () => {
-      setBar(T("offline"), true);
+      hadSocketError = true;
+      setBar("offline");
       retry = setTimeout(connect, 2000);
     };
     ws.onerror = () => {};
   }
 
-  $("langBtn").onclick = () => {
+  if ($("langBtn")) $("langBtn").onclick = () => {
     lang = lang === "kr" ? "fr" : "kr";
     localStorage.setItem("kontak_lang", lang);
     applyLang();
   };
   applyLang();
+
+  const menuBtn = $("menuBtn");
+  const menuPanel = $("menuPanel");
+  function closeMenu() {
+    if (!menuPanel) return;
+    menuPanel.hidden = true;
+    if (menuBtn) menuBtn.setAttribute("aria-expanded", "false");
+  }
+  if (menuBtn && menuPanel) {
+    menuBtn.onclick = (e) => {
+      e.stopPropagation();
+      const open = menuPanel.hidden;
+      menuPanel.hidden = !open;
+      menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    menuPanel.addEventListener("click", (e) => e.stopPropagation());
+    document.addEventListener("click", closeMenu);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+  }
 
   const contrastBtn = $("contrastBtn");
   if (contrastBtn) {
@@ -327,10 +359,10 @@
     location.reload();
   };
 
-  $("photoBtn").onclick = () => $("photoInput").click();
-  $("photoInput").onchange = () => {
-    const file = $("photoInput").files && $("photoInput").files[0];
-    $("photoInput").value = "";
+  $("profilePhotoBtn").onclick = () => $("profilePhotoInput").click();
+  $("profilePhotoInput").onchange = () => {
+    const file = $("profilePhotoInput").files && $("profilePhotoInput").files[0];
+    $("profilePhotoInput").value = "";
     if (!file) return;
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -835,22 +867,6 @@
     localStorage.setItem("kontak_sat", on ? "1" : "0");
     $("satBtn").textContent = on ? "Rezo fèb: ON" : "Rezo fèb: OFF";
     toast(on ? "Rezo fèb: odyo limite, videyo koupe si sa pete" : "Mòd nòmal");
-  };
-
-  $("turnBtn").textContent = "TURN: ON";
-  $("turnBtn").onclick = () => {
-    $("turnUrlInput").value = localStorage.getItem("kontak_turn_url") || "";
-    $("turnUserInput").value = localStorage.getItem("kontak_turn_user") || "";
-    $("turnPassInput").value = localStorage.getItem("kontak_turn_pass") || "";
-    $("turnModal").hidden = false;
-  };
-  $("turnCloseBtn").onclick = () => { $("turnModal").hidden = true; };
-  $("turnSaveBtn").onclick = () => {
-    localStorage.setItem("kontak_turn_url", $("turnUrlInput").value.trim());
-    localStorage.setItem("kontak_turn_user", $("turnUserInput").value.trim());
-    localStorage.setItem("kontak_turn_pass", $("turnPassInput").value.trim());
-    $("turnModal").hidden = true;
-    toast("TURN sove");
   };
 
   let iceCache = null;
