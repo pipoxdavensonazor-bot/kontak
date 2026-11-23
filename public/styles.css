@@ -105,3 +105,19 @@ body.hc .msg.me{background:#b3e6b3}
   #side{min-height:auto;border-right:0}
   .mobile-hide{display:none}
 }
+/* v24: voice notes and photos */
+#composer .icon{padding:8px 10px;min-width:42px}
+#recBar{display:flex;align-items:center;gap:8px;padding:10px;border-top:1px solid var(--line)}
+#recBar[hidden]{display:none}
+.recDot{width:10px;height:10px;border-radius:50%;background:#ef4444;animation:recBlink 1s infinite}
+@keyframes recBlink{50%{opacity:.25}}
+#recTime{font-variant-numeric:tabular-nums;min-width:38px}
+.voice{display:flex;align-items:center;gap:8px;min-width:190px}
+.voice button{padding:6px 10px;min-width:38px;border-radius:50%}
+.voice .bar{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.2);overflow:hidden;cursor:pointer}
+.voice .bar>i{display:block;height:100%;width:0;background:#4ade80}
+.voice .t{font-size:12px;font-variant-numeric:tabular-nums;opacity:.85;min-width:34px}
+.msg img.photo{display:block;max-width:100%;max-height:320px;border-radius:10px;cursor:pointer}
+.msg .photoLoad{background:transparent;border:1px dashed rgba(255,255,255,.35);padding:14px;border-radius:10px;width:100%}
+body.hc .voice .bar{background:#bbb}
+#composer[hidden]{display:none}

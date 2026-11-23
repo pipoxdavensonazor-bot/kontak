@@ -1,8 +1,9 @@
-# Kontak v23
+# Kontak v24
 
 Messagerie temps réel et appels audio/vidéo (WebRTC), en créole haïtien.
 Servie par **Cloudflare Workers** : un Worker (`src/worker.js`), un Durable Object
-`KontakRoom` pour les WebSockets, une base **D1** (`kontak`) et les fichiers statiques de `public/`.
+`KontakRoom` pour les WebSockets, une base **D1** (`kontak`), un bucket **R2** privé
+(`kontak-media`, notes vocales et photos) et les fichiers statiques de `public/`.
 
 Production : https://kontak.pipoxdavensonazor.workers.dev
 
@@ -54,6 +55,18 @@ npm run deploy          # wrangler deploy
 Les migrations sont dans `migrations/` (`npm run db:migrate:local` / `npm run db:migrate:remote`).
 `0004_push_calls.sql` déclare les tables `push_subs` et `calls`, autrefois créées seulement
 au démarrage ; tout y est en `IF NOT EXISTS`.
+
+## Notes vocales et photos (v24)
+
+- Bouton 🎤 dans la conversation : appuyer pour enregistrer, puis **Anile** ou **Voye**. 2 minutes maximum.
+  Opus/webm (repli AAC/mp4 sur iPhone), mono, 24 kbit/s (12 kbit/s en mode **Rezo fèb**), soit ~180 Ko pour 1 minute.
+- Bouton 📷 : la photo est réduite dans le téléphone (1280 px, 800 px en Rezo fèb, JPEG) avant l'envoi.
+- `POST /media?convId=&kind=voice|photo&duration=` (session obligatoire, membre de la conversation, 1,5 Mo max),
+  puis message WebSocket `sendMessage { convId, mediaId }`.
+- `GET /media/<id>` : réservé aux membres de la conversation (404 sinon), identifiants aléatoires de 128 bits, jamais d'URL publique.
+- Lecture dans la bulle : rien n'est téléchargé avant d'appuyer sur ▶. En Rezo fèb, les photos ne se chargent qu'à la demande.
+- Les anciens clients (v23) voient un texte « 🎤 Not vokal (0:12) » / « 📷 Foto ».
+- Les métadonnées sont dans la table D1 `media` (migration 0005).
 
 ## Ce que v23 change
 

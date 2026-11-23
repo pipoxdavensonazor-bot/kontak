@@ -1,5 +1,6 @@
 import { KontakRoom } from "./kontak-room.js";
 import { vapidPublicKey } from "./push.js";
+import { handleMedia } from "./media.js";
 
 export { KontakRoom };
 
@@ -71,6 +72,10 @@ export default {
         } catch {
           return Response.json({ error: "vapid-missing" }, { status: 503, headers: { "Cache-Control": "no-store" } });
         }
+      }
+
+      if (url.pathname === "/media" || url.pathname.startsWith("/media/")) {
+        return handleMedia(request, env, url);
       }
 
       if (url.pathname === "/turn") {
