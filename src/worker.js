@@ -63,6 +63,10 @@ export default {
     try {
       const url = new URL(request.url);
 
+      if (url.pathname === "/version") {
+        return Response.json({ build: "v28" }, { headers: { "Cache-Control": "no-store" } });
+      }
+
       if (url.pathname === "/vapid") {
         try {
           return Response.json({ key: vapidPublicKey(env) }, { headers: { "Cache-Control": "no-store" } });

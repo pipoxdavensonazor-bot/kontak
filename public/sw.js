@@ -1,9 +1,9 @@
-const CACHE = "kontak-v27";
+const CACHE = "kontak-v28";
 const PRECACHE = [
   "/",
   "/index.html",
-  "/styles.css?v=27",
-  "/app.js?v=27",
+  "/styles.css?v=28",
+  "/app.js?v=28",
   "/manifest.json",
   "/logo.svg",
   "/favicon.svg",
@@ -36,7 +36,7 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname === "/ws") return;
   // Private / dynamic endpoints are never cached by the service worker.
-  if (url.pathname.startsWith("/media") || url.pathname.startsWith("/verify") || url.pathname === "/turn" || url.pathname === "/vapid") return;
+  if (url.pathname.startsWith("/media") || url.pathname.startsWith("/verify") || url.pathname === "/turn" || url.pathname === "/vapid" || url.pathname === "/version") return;
 
   event.respondWith((async () => {
     try {
