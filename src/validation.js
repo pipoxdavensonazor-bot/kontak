@@ -40,8 +40,10 @@ export const SearchSchema = z.object({
 export const SendMessageSchema = z.object({
   type: z.literal("sendMessage"),
   convId: id,
-  body: z.string().min(1, "empty").max(2000),
+  body: z.string().max(2000).nullish(),
   clientId: z.string().max(80).nullish(),
+  // v24: voice note / photo previously uploaded with POST /media
+  mediaId: z.string().regex(/^[a-f0-9]{32}$/).nullish(),
 });
 
 export const GetMessagesSchema = z.object({

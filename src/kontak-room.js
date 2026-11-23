@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { getDb, schema, eq, and, or, desc, lt } from "./db/index.js";
 import { RegisterSchema, LoginSchema, validate, parseIncoming } from "./validation.js";
 import { sendWebPush } from "./push.js";
+import { mediaLabel } from "./media.js";
 
 export function maskPhone(phone) {
   const d = String(phone || "").replace(/\D/g, "");
@@ -270,6 +271,7 @@ export class KontakRoom extends DurableObject {
           "CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, peer_id INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, at INTEGER NOT NULL)",
           "ALTER TABLE messages ADD COLUMN client_id TEXT DEFAULT ''",
           "CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
+          "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, conv_id INTEGER NOT NULL, owner_id INTEGER NOT NULL, message_id INTEGER, kind TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, duration_ms INTEGER DEFAULT 0, r2_key TEXT NOT NULL, created_at INTEGER NOT NULL)",
           "CREATE UNIQUE INDEX IF NOT EXISTS messages_client ON messages(conv_id, client_id) WHERE client_id != ''"
         ];
         for (const sql of sqls) {
@@ -415,6 +417,10 @@ export class KontakRoom extends DurableObject {
       lastBody: c.lastBody,
       seen
     };
+  }
+
+  mediaOut(row) {
+    return { id: row.id, kind: row.kind, mime: row.mime, size: Number(row.size), durationMs: Number(row.duration_ms) || 0 };
   }
 
   // Ids of people who sent `meId` at least one message in a direct conversation.
@@ -657,6 +663,20 @@ export class KontakRoom extends DurableObject {
       .orderBy(desc(schema.messages.id))
       .limit(limit);
 
+    if (results.length) {
+      const ids = results.map((r) => r.id);
+      try {
+        const q = await this.env.DB.prepare(
+          "SELECT * FROM media WHERE message_id IN (" + ids.map(() => "?").join(",") + ")"
+        ).bind(...ids).all();
+        const byMsg = new Map((q.results || []).map((r) => [Number(r.message_id), r]));
+        for (const r of results) {
+          const row = byMsg.get(r.id);
+          if (row) { r.kind = row.kind; r.media = this.mediaOut(row); }
+        }
+      } catch (e) { console.error("media-join", e); }
+    }
+
     await this.markRead(meId, convId);
     this.send(ws, { type: "messages", convId, messages: results.reverse(), hasMore: results.length === limit });
   }
@@ -664,12 +684,27 @@ export class KontakRoom extends DurableObject {
   async handleSendMessage(ws, msg) {
     const meId = this.needUser(ws);
     const convId = Number(msg.convId);
-    const body = String(msg.body || "").slice(0, 2000);
+    let body = String(msg.body || "").slice(0, 2000);
     const clientId = String(msg.clientId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
-    if (!body.trim()) throw new Error("empty");
+    const mediaId = msg.mediaId ? String(msg.mediaId) : "";
+    if (!body.trim() && !mediaId) throw new Error("empty");
 
     const conv = await this.db.select().from(schema.conversations).where(eq(schema.conversations.id, convId)).get();
     if (!(await this.inConv(conv, meId))) throw new Error("no-conv");
+
+    let media = null;
+    if (mediaId) {
+      const row = await this.env.DB.prepare("SELECT * FROM media WHERE id = ?").bind(mediaId).first();
+      if (!row || Number(row.owner_id) !== meId || Number(row.conv_id) !== convId) throw new Error("no-media");
+      if (row.message_id) {
+        // already sent (retry from the outbox): acknowledge the existing message
+        this.send(ws, { type: "message-ack", clientId, id: row.message_id, convId });
+        return;
+      }
+      media = this.mediaOut(row);
+      // Old clients (v23) only read `body`: give them a readable fallback.
+      body = mediaLabel(row.kind, row.duration_ms);
+    }
 
     if (clientId) {
       const dup = await this.env.DB.prepare(
@@ -686,6 +721,7 @@ export class KontakRoom extends DurableObject {
       "INSERT INTO messages (conv_id, from_id, body, at, read_at, client_id) VALUES (?, ?, ?, ?, 0, ?)"
     ).bind(convId, meId, body, at, clientId).run();
     const id = res.meta && res.meta.last_row_id;
+    if (media) await this.env.DB.prepare("UPDATE media SET message_id = ? WHERE id = ?").bind(id, media.id).run();
     await this.db.update(schema.conversations)
       .set({ lastAt: at, lastBody: body.slice(0, 80) })
       .where(eq(schema.conversations.id, convId));
@@ -693,14 +729,15 @@ export class KontakRoom extends DurableObject {
     const payload = {
       type: "new-message",
       convId,
-      message: { id, convId, from: meId, body, at, readAt: 0 }
+      message: { id, convId, from: meId, body, at, readAt: 0, ...(media ? { kind: media.kind, media } : {}) }
     };
     this.send(ws, { type: "message-ack", clientId, id, convId });
     this.send(ws, payload);
     for (const peer of await this.others(conv, meId)) {
       this.broadcastToUser(peer, payload);
       if (!this.isOnline(peer)) {
-        await this.pushTo(peer, { title: "Kontak", body: "Nouvo mesaj", tag: "msg", kind: "msg" });
+        const label = media ? (media.kind === "voice" ? "🎤 Not vokal" : "📷 Foto") : "Nouvo mesaj";
+        await this.pushTo(peer, { title: "Kontak", body: label, tag: "msg", kind: "msg" });
       }
     }
   }

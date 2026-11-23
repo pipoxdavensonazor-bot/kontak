@@ -1,4 +1,4 @@
-const CACHE = "kontak-v23";
+const CACHE = "kontak-v24";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -18,6 +18,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname === "/ws") return;
+  // Private / dynamic endpoints are never cached by the service worker.
+  if (url.pathname.startsWith("/media") || url.pathname === "/turn" || url.pathname === "/vapid") return;
 
   event.respondWith((async () => {
     try {

@@ -57,3 +57,16 @@ export const calls = sqliteTable("calls", {
   status: text("status").notNull(),
   at: integer("at").notNull(),
 });
+
+export const media = sqliteTable("media", {
+  id: text("id").primaryKey(),
+  convId: integer("conv_id").notNull(),
+  ownerId: integer("owner_id").notNull(),
+  messageId: integer("message_id"),
+  kind: text("kind").notNull(),
+  mime: text("mime").notNull(),
+  size: integer("size").notNull(),
+  durationMs: integer("duration_ms").default(0),
+  r2Key: text("r2_key").notNull(),
+  createdAt: integer("created_at").notNull(),
+});

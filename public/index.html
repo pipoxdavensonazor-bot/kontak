@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Kontak">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=23">
+<link rel="stylesheet" href="styles.css?v=24">
 </head>
 <body>
 <div id="topbar">
@@ -118,8 +118,18 @@
         <div id="typingEl" class="small" style="padding:0 12px;height:18px"></div>
         <div id="msgs"></div>
         <div id="composer">
+          <button id="photoBtn" class="ghost icon" type="button" title="Voye foto" aria-label="Voye foto">📷</button>
+          <input id="photoInput" type="file" accept="image/*" hidden>
           <input id="msgInput" placeholder="Ekri mesaj…" class="grow" maxlength="2000">
+          <button id="micBtn" class="ghost icon" type="button" title="Not vokal" aria-label="Anrejistre yon not vokal">🎤</button>
           <button id="sendBtn" type="button">Voye</button>
+        </div>
+        <div id="recBar" hidden>
+          <span class="recDot"></span>
+          <span id="recTime">0:00</span>
+          <span class="small grow" id="recHint">Ap anrejistre… (2 min maks)</span>
+          <button id="recCancel" class="ghost" type="button">Anile</button>
+          <button id="recSend" type="button">Voye</button>
         </div>
       </div>
     </div>
@@ -255,7 +265,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=23"></script>
+<script src="app.js?v=24"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -282,7 +292,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=23");
+  navigator.serviceWorker.register("/sw.js?v=24");
 }
 </script>
 </body>

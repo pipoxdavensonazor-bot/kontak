@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v23";
+  const BUILD = "v24";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -497,11 +497,7 @@
     const el = $("msgs");
     el.innerHTML = "";
     list.forEach((m) => {
-      const d = document.createElement("div");
-      d.className = "msg" + (me && m.from === me.id ? " me" : "");
-      const text = document.createElement("div");
-      text.textContent = m.body;
-      d.appendChild(text);
+      const d = msgNode(m);
       if (me && m.from === me.id) {
         const tick = document.createElement("div");
         tick.className = "tick";
@@ -516,17 +512,14 @@
 
   function onNewMessage(o) {
     if (Number(o.convId) === Number(currentConv)) {
-      const d = document.createElement("div");
-      d.className = "msg" + (me && o.message.from === me.id ? " me" : "");
-      d.textContent = o.message.body;
-      $("msgs").appendChild(d);
+      $("msgs").appendChild(msgNode(o.message));
       $("msgs").scrollTop = $("msgs").scrollHeight;
     }
     send({ type: "getConversations" });
     if (me && o.message && o.message.from !== me.id) {
       const looking = document.hasFocus() && !document.hidden && Number(o.convId) === Number(currentConv);
       if (looking) send({ type: "markRead", convId: Number(o.convId) });
-      else notify("Kontak", "Nouvo mesaj");
+      else notify("Kontak", o.message.media ? (o.message.media.kind === "voice" ? "🎤 Not vokal" : "📷 Foto") : "Nouvo mesaj");
     }
   }
 
@@ -567,11 +560,249 @@
 
   function flushOutbox() {
     if (!ws || ws.readyState !== 1) return;
-    outbox.forEach((m) => send({ type: "sendMessage", convId: Number(m.convId), body: m.body, clientId: m.clientId }));
+    outbox.forEach((m) => send(m.mediaId
+      ? { type: "sendMessage", convId: Number(m.convId), mediaId: m.mediaId, clientId: m.clientId }
+      : { type: "sendMessage", convId: Number(m.convId), body: m.body, clientId: m.clientId }));
   }
   window.addEventListener("online", flushOutbox);
 
   function satOn() { return localStorage.getItem("kontak_sat") === "1"; }
+
+  // ---------- v24: voice notes and photos ----------
+  const VOICE_MAX_MS = 120000;
+  const mediaUrls = new Map();
+  function fmtDur(ms) {
+    const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+  function fmtSize(n) { return n > 1e6 ? (n / 1e6).toFixed(1) + " Mo" : Math.max(1, Math.round(n / 1000)) + " Ko"; }
+  async function mediaUrl(id) {
+    if (mediaUrls.has(id)) return mediaUrls.get(id);
+    const res = await fetch("/media/" + id, { headers: { Authorization: "Bearer " + (localStorage.getItem("kontak_token") || "") } });
+    if (!res.ok) throw new Error(res.status === 404 ? "Medya pa disponib" : "Erè rezo");
+    const url = URL.createObjectURL(await res.blob());
+    mediaUrls.set(id, url);
+    return url;
+  }
+  function msgNode(m) {
+    const d = document.createElement("div");
+    d.className = "msg" + (me && m.from === me.id ? " me" : "");
+    const media = m.media;
+    if (media && media.kind === "voice") d.appendChild(voiceNode(media));
+    else if (media && media.kind === "photo") d.appendChild(photoNode(media));
+    else {
+      const text = document.createElement("div");
+      text.textContent = m.body;
+      d.appendChild(text);
+    }
+    return d;
+  }
+  let playing = null;
+  function voiceNode(media) {
+    const box = document.createElement("div");
+    box.className = "voice";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "▶";
+    btn.setAttribute("aria-label", "Jwe not vokal la");
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    const fill = document.createElement("i");
+    bar.appendChild(fill);
+    const t = document.createElement("span");
+    t.className = "t";
+    const total = Number(media.durationMs) || 0;
+    t.textContent = fmtDur(total);
+    box.append(btn, bar, t);
+    let audio = null;
+    const dur = () => (audio && isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 : total);
+    const paint = () => {
+      const pos = audio ? audio.currentTime * 1000 : 0;
+      fill.style.width = Math.min(100, (pos / Math.max(1, dur())) * 100) + "%";
+      t.textContent = audio && !audio.paused ? fmtDur(pos) : fmtDur(total);
+    };
+    btn.onclick = async () => {
+      try {
+        if (!audio) {
+          btn.textContent = "…";
+          btn.disabled = true;
+          audio = new Audio(await mediaUrl(media.id));
+          audio.preload = "auto";
+          audio.ontimeupdate = paint;
+          audio.onended = () => { btn.textContent = "▶"; audio.currentTime = 0; paint(); };
+          audio.onpause = () => { btn.textContent = "▶"; paint(); };
+          audio.onplay = () => { btn.textContent = "❚❚"; };
+          btn.disabled = false;
+        }
+        if (audio.paused) {
+          if (playing && playing !== audio) playing.pause();
+          playing = audio;
+          await audio.play();
+        } else audio.pause();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "▶";
+        toast((err && err.message) || "Pa ka jwe li", true);
+      }
+    };
+    bar.onclick = (e) => {
+      if (!audio) return btn.onclick();
+      const r = bar.getBoundingClientRect();
+      audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur() / 1000;
+      paint();
+    };
+    return box;
+  }
+  function photoNode(media) {
+    const box = document.createElement("div");
+    const load = async () => {
+      box.textContent = "Tann…";
+      try {
+        const img = document.createElement("img");
+        img.className = "photo";
+        img.alt = "Foto";
+        img.src = await mediaUrl(media.id);
+        img.onclick = () => window.open(img.src, "_blank");
+        box.textContent = "";
+        box.appendChild(img);
+      } catch (err) {
+        box.textContent = "";
+        box.appendChild(btn);
+        toast((err && err.message) || "Pa ka chaje foto a", true);
+      }
+    };
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "photoLoad";
+    btn.textContent = "📷 Foto · " + fmtSize(media.size) + " — peze pou wè";
+    btn.onclick = load;
+    // Weak-network mode: never download photos automatically.
+    if (satOn()) box.appendChild(btn);
+    else load();
+    return box;
+  }
+
+  async function uploadMedia(blob, kind, durationMs) {
+    if (!currentConv) throw new Error("Chwazi yon konvèsasyon");
+    const convId = Number(currentConv);
+    const type = String(blob.type || "").split(";")[0] || (kind === "voice" ? "audio/webm" : "image/jpeg");
+    let last;
+    for (let i = 0; i < 3; i++) {
+      try {
+        const res = await fetch("/media?convId=" + convId + "&kind=" + kind + "&duration=" + Math.round(durationMs || 0), {
+          method: "POST",
+          headers: { Authorization: "Bearer " + (localStorage.getItem("kontak_token") || ""), "Content-Type": type },
+          body: blob
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.id) {
+          const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+          outbox.push({ clientId, convId, mediaId: data.id });
+          localStorage.setItem("kontak_outbox", JSON.stringify(outbox));
+          flushOutbox();
+          return;
+        }
+        last = new Error(data.error === "too-big" ? "Fichye a twò lou" : data.error === "too-long" ? "Not la twò long" : "Pa ka voye l (" + (data.error || res.status) + ")");
+        if (res.status < 500) break;
+      } catch (err) { last = err; }
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+    throw last || new Error("Pa ka voye l");
+  }
+
+  // Voice recording: tap 🎤, then Anile / Voye. Opus/webm, AAC/mp4 fallback (iPhone).
+  let rec = null;
+  function pickAudioType() {
+    if (!window.MediaRecorder) return null;
+    const list = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/aac", "audio/webm"];
+    for (const t of list) { try { if (MediaRecorder.isTypeSupported(t)) return t; } catch {} }
+    return "";
+  }
+  function showRec(on) {
+    $("recBar").hidden = !on;
+    $("composer").hidden = on;
+  }
+  async function startRec() {
+    if (!currentConv) return toast("Chwazi yon konvèsasyon");
+    if (rec) return;
+    const type = pickAudioType();
+    if (type === null || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Telefòn sa pa ka anrejistre odyo", true);
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch { return toast("Mikwo a bloke. Bay Kontak pèmisyon mikwo a.", true); }
+    const opts = { audioBitsPerSecond: satOn() ? 12000 : 24000 };
+    if (type) opts.mimeType = type;
+    let mr;
+    try { mr = new MediaRecorder(stream, opts); } catch { mr = new MediaRecorder(stream); }
+    const chunks = [];
+    rec = { mr, stream, chunks, started: Date.now(), cancelled: false, timer: null };
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      const r = rec;
+      rec = null;
+      clearInterval(r.timer);
+      r.stream.getTracks().forEach((tr) => tr.stop());
+      showRec(false);
+      if (r.cancelled) return;
+      const ms = Math.min(VOICE_MAX_MS, Date.now() - r.started);
+      if (ms < 700) return toast("Not la twò kout");
+      const blob = new Blob(r.chunks, { type: (mr.mimeType || type || "audio/webm").split(";")[0] });
+      try {
+        toast("Ap voye not vokal la…");
+        await uploadMedia(blob, "voice", ms);
+      } catch (err) { toast((err && err.message) || "Pa ka voye not vokal la", true); }
+    };
+    mr.start(1000);
+    showRec(true);
+    $("recTime").textContent = "0:00";
+    rec.timer = setInterval(() => {
+      const ms = Date.now() - rec.started;
+      $("recTime").textContent = fmtDur(ms);
+      if (ms >= VOICE_MAX_MS) stopRec(false);
+    }, 250);
+  }
+  function stopRec(cancel) {
+    if (!rec) return;
+    rec.cancelled = !!cancel;
+    try { rec.mr.stop(); } catch { showRec(false); rec = null; }
+  }
+  $("micBtn").onclick = startRec;
+  $("recCancel").onclick = () => stopRec(true);
+  $("recSend").onclick = () => stopRec(false);
+
+  // Photos: resized and re-encoded in the browser before upload (small for weak networks).
+  async function shrinkImage(file) {
+    const max = satOn() ? 800 : 1280;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error("Foto sa pa li"));
+        i.src = url;
+      });
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise((resolve) => c.toBlob(resolve, "image/jpeg", satOn() ? 0.6 : 0.72));
+    } finally { URL.revokeObjectURL(url); }
+  }
+  $("photoBtn").onclick = () => { if (!currentConv) return toast("Chwazi yon konvèsasyon"); $("photoInput").click(); };
+  $("photoInput").onchange = async () => {
+    const file = $("photoInput").files && $("photoInput").files[0];
+    $("photoInput").value = "";
+    if (!file) return;
+    try {
+      const blob = await shrinkImage(file);
+      if (!blob) throw new Error("Foto sa pa li");
+      toast("Ap voye foto a…");
+      await uploadMedia(blob, "photo", 0);
+    } catch (err) { toast((err && err.message) || "Pa ka voye foto a", true); }
+  };
+
   $("satBtn").textContent = satOn() ? "Rezo fèb: ON" : "Rezo fèb: OFF";
   $("satBtn").onclick = () => {
     const on = !satOn();
