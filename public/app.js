@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v24";
+  const BUILD = "v25";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -18,7 +18,17 @@
     "Nimewo twò kout (8-15 chif)": "Nimewo twò kout. Mete kòd peyi a, egzanp 50937123456.",
     "Modpas omwen 8 karaktè": "Modpas dwe gen omwen 8 karaktè.",
     "bad-input": "Done yo pa bon.",
-    "unknown-type": "Mete Kontak ajou (rechaje paj la)."
+    "unknown-type": "Mete Kontak ajou (rechaje paj la).",
+    "sms-off": "Verifikasyon SMS pa disponib pou kounye a.",
+    "cooldown": "Tann yon minit anvan ou voye yon lòt kòd.",
+    "daily-limit": "Twòp kòd jodi a. Eseye demen.",
+    "slow-down": "Twòp esè. Tann yon ti kout.",
+    "bad-code": "Kòd la pa bon.",
+    "expired": "Kòd la ekspire. Voye yon nouvo.",
+    "too-many-tries": "Twòp esè. Voye yon nouvo kòd.",
+    "already-verified": "Nimewo a deja verifye.",
+    "sms-unavailable": "Pa ka voye SMS la kounye a. Eseye pita.",
+    "bad-phone": "Nimewo a pa ka verifye."
   };
 
   let lang = localStorage.getItem("kontak_lang") || "kr";
@@ -119,6 +129,7 @@
     $("logoutBtn").hidden = false;
     toast(T("welcome") + " " + me.name + "!");
     paintMe();
+    maybeShowVerify();
     if (isIos()) showIosCard();
     else enablePush();
     send({ type: "getConversations" });
@@ -408,6 +419,10 @@
   function paintMe() {
     const el = $("meAvatar");
     if (el && me) fillAvatar(el, me);
+    const badge = $("profileVerified");
+    if (badge && me) {
+      badge.textContent = me.phoneVerified ? "Nimewo verifye" : "Nimewo poko verifye";
+    }
   }
 
   function renderSearch(results) {
@@ -1358,6 +1373,147 @@
   $("callBtn").onclick = () => startCall(false);
   $("audioBtn").onclick = () => startCall(true);
 
+
+  const VERIFY_ERR = {
+    "sms-off": ERR["sms-off"],
+    "cooldown": ERR["cooldown"],
+    "daily-limit": ERR["daily-limit"],
+    "slow-down": ERR["slow-down"],
+    "bad-code": ERR["bad-code"],
+    "expired": ERR["expired"],
+    "too-many-tries": ERR["too-many-tries"],
+    "already-verified": ERR["already-verified"],
+    "sms-unavailable": ERR["sms-unavailable"],
+    "bad-phone": ERR["bad-phone"],
+    auth: "Sesyon fini. Rekonekte."
+  };
+
+  async function verifyApi(path, body) {
+    const token = localStorage.getItem("kontak_token");
+    const headers = { Authorization: "Bearer " + token };
+    const init = { method: body ? "POST" : "GET", headers, cache: "no-store" };
+    if (body) {
+      headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    const res = await fetch(path, init);
+    let data = {};
+    try { data = await res.json(); } catch { data = {}; }
+    return { ok: res.ok, status: res.status, data };
+  }
+
+  function setVerifyHint(text, isErr) {
+    ["verifyHint", "verifyHintMe"].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.textContent = text || "";
+      el.style.color = isErr ? "var(--warn)" : "";
+    });
+  }
+
+  function refreshVerifyUi() {
+    const enabled = !!(me && me._verifyEnabled);
+    const verified = !!(me && me.phoneVerified);
+    const postponed = sessionStorage.getItem("kontak_verify_later") === "1";
+    const banner = $("verifyBanner");
+    const card = $("verifyCard");
+    if (banner) banner.hidden = !enabled || verified || postponed;
+    if (card) card.hidden = !enabled || verified;
+    const phoneLabel = me && me.phone ? "+" + String(me.phone).replace(/\D/g, "") : "";
+    if ($("verifyPhone")) $("verifyPhone").textContent = phoneLabel;
+    paintMe();
+  }
+
+  async function maybeShowVerify() {
+    if (!me || me.phoneVerified || !localStorage.getItem("kontak_token")) {
+      if (me) me._verifyEnabled = false;
+      refreshVerifyUi();
+      return;
+    }
+    try {
+      const res = await verifyApi("/verify/status");
+      me._verifyEnabled = !!(res.data && res.data.enabled);
+      if (res.data && res.data.verified) me.phoneVerified = true;
+    } catch {
+      me._verifyEnabled = false;
+    }
+    refreshVerifyUi();
+  }
+
+  async function sendVerifyCode() {
+    setVerifyHint("N ap voye kòd la…");
+    ["verifySendBtn", "verifySendBtnMe"].forEach((id) => { if ($(id)) $(id).disabled = true; });
+    try {
+      const res = await verifyApi("/verify/request", {});
+      if (res.data && res.data.verified) {
+        me.phoneVerified = true;
+        setVerifyHint("Nimewo a deja verifye.");
+        refreshVerifyUi();
+        toast("Nimewo verifye.");
+        return;
+      }
+      if (!res.ok) {
+        let msg = VERIFY_ERR[res.data && res.data.error] || "Pa ka voye kòd la.";
+        if (res.data && res.data.error === "cooldown" && res.data.retryAfter) {
+          msg = "Tann " + res.data.retryAfter + " segonn anvan ou voye yon lòt kòd.";
+        }
+        setVerifyHint(msg, true);
+        toast(msg, true);
+        return;
+      }
+      ["verifyCodeRow", "verifyCodeRowMe"].forEach((id) => { if ($(id)) $(id).hidden = false; });
+      setVerifyHint("Nou voye yon kòd 6 chif. Li ekspire nan 10 minit.");
+      if ($("verifyCodeInput")) $("verifyCodeInput").focus();
+    } catch {
+      setVerifyHint("Pa ka voye kòd la.", true);
+    } finally {
+      ["verifySendBtn", "verifySendBtnMe"].forEach((id) => { if ($(id)) $(id).disabled = false; });
+    }
+  }
+
+  async function checkVerifyCode(inputId) {
+    const input = $(inputId);
+    const code = input ? String(input.value || "").replace(/\D/g, "") : "";
+    if (code.length !== 6) {
+      setVerifyHint("Mete kòd 6 chif la.", true);
+      return;
+    }
+    setVerifyHint("Ap verifye…");
+    try {
+      const res = await verifyApi("/verify/check", { code });
+      if (res.ok && res.data && res.data.verified) {
+        me.phoneVerified = true;
+        sessionStorage.removeItem("kontak_verify_later");
+        setVerifyHint("Nimewo verifye.");
+        refreshVerifyUi();
+        toast("Nimewo verifye.");
+        return;
+      }
+      let msg = VERIFY_ERR[res.data && res.data.error] || "Kòd la pa bon.";
+      if (res.data && res.data.error === "bad-code" && res.data.remaining != null) {
+        msg = "Kòd la pa bon. " + res.data.remaining + " esè rete.";
+      }
+      setVerifyHint(msg, true);
+      toast(msg, true);
+    } catch {
+      setVerifyHint("Pa ka verifye kounye a.", true);
+    }
+  }
+
+  if ($("verifySendBtn")) $("verifySendBtn").onclick = sendVerifyCode;
+  if ($("verifySendBtnMe")) $("verifySendBtnMe").onclick = sendVerifyCode;
+  if ($("verifyCheckBtn")) $("verifyCheckBtn").onclick = () => checkVerifyCode("verifyCodeInput");
+  if ($("verifyCheckBtnMe")) $("verifyCheckBtnMe").onclick = () => checkVerifyCode("verifyCodeInputMe");
+  if ($("verifyLaterBtn")) $("verifyLaterBtn").onclick = () => {
+    sessionStorage.setItem("kontak_verify_later", "1");
+    refreshVerifyUi();
+  };
+  ["verifyCodeInput", "verifyCodeInputMe"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.onkeydown = (e) => { if (e.key === "Enter") checkVerifyCode(id); };
+  });
+
   function showTab(name) {
     ["msgs", "people", "calls", "me"].forEach((n) => {
       const panel = $("tab-" + n);
@@ -1371,6 +1527,7 @@
       $("profileName").value = me.name || "";
       $("profilePhone").textContent = me.phone || "";
       paintMe();
+      refreshVerifyUi();
     }
   }
   document.querySelectorAll("#nav button").forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });

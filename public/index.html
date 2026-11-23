@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Kontak">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=24">
+<link rel="stylesheet" href="styles.css?v=25">
 </head>
 <body>
 <div id="topbar">
@@ -70,7 +70,7 @@
         <select id="regCc" style="max-width:90px"><option value="509">+509</option><option value="1">+1</option><option value="33">+33</option><option value="1809">+1809</option></select>
         <input id="regPhoneInput" class="grow" placeholder="37123456" inputmode="tel" autocomplete="tel">
       </div>
-      <p class="hint">Nimewo a poko verifye. Se yon kont, pa yon idantite telefòn.</p>
+      <p class="hint">Nimewo a poko verifye. Ou ka verifye li apre w kreye kont la. Se yon kont, pa yon idantite telefòn.</p>
       <label>Modpas</label>
       <input id="regPassInput" type="password" placeholder="omwen 8 karaktè" minlength="8" autocomplete="new-password">
       <button id="regBtn" class="grow" type="button" style="margin-top:12px;width:100%">Kreye kont</button>
@@ -96,6 +96,17 @@
           <input id="photoInput" type="file" accept="image/*" hidden>
           <input id="searchInput" placeholder="Chache non oswa nimewo…">
           <div id="searchRes"></div>
+        </div>
+        <div id="verifyBanner" class="verify-banner" hidden>
+          <b>Verifye nimewo ou</b>
+          <p>Nou ka voye yon kòd SMS pou konfime nimewo <span id="verifyPhone"></span>.</p>
+          <button id="verifySendBtn" type="button">Voye kòd la</button>
+          <div id="verifyCodeRow" class="row" hidden style="margin-top:8px">
+            <input id="verifyCodeInput" class="grow" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456">
+            <button id="verifyCheckBtn" type="button">Konfime</button>
+          </div>
+          <p id="verifyHint" class="hint"></p>
+          <button id="verifyLaterBtn" class="ghost" type="button">Pita</button>
         </div>
         <div id="convList"></div>
       </div>
@@ -159,12 +170,25 @@
             <label>Non</label>
             <input id="profileName" maxlength="40">
             <div id="profilePhone" class="small"></div>
+            <div id="profileVerified" class="small"></div>
           </div>
         </div>
         <div class="row" style="margin-top:10px">
           <button id="photoBtn" class="ghost" type="button">Foto</button>
           <button id="saveProfile" class="grow" type="button">Sove pwofil</button>
         </div>
+      </div>
+      <div id="verifyCard" class="card" hidden>
+        <b>Verifikasyon SMS</b>
+        <p class="hint" id="verifyCardHint">Voye yon kòd pou konfime nimewo ou. Ou ka kontinye itilize Kontak san sa.</p>
+        <div class="row" style="margin-top:8px;flex-wrap:wrap">
+          <button id="verifySendBtnMe" type="button">Voye kòd la</button>
+        </div>
+        <div id="verifyCodeRowMe" class="row" hidden style="margin-top:8px">
+          <input id="verifyCodeInputMe" class="grow" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456">
+          <button id="verifyCheckBtnMe" type="button">Konfime</button>
+        </div>
+        <p id="verifyHintMe" class="hint"></p>
       </div>
       <div class="card">
         <b>Paramèt</b>
@@ -265,7 +289,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=24"></script>
+<script src="app.js?v=25"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -292,7 +316,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=24");
+  navigator.serviceWorker.register("/sw.js?v=25");
 }
 </script>
 </body>

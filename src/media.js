@@ -3,6 +3,9 @@
 // Download: GET  /media/<id>                                    (Authorization: Bearer <session>)
 // Only members of the conversation can upload to it or read from it. Ids are 128-bit random.
 
+import { sessionUser } from "./session.js";
+export { sessionUser };
+
 export const MEDIA_LIMITS = {
   voice: { maxBytes: 1_500_000, maxDurationMs: 125_000, types: ["audio/webm", "audio/ogg", "audio/mp4", "audio/aac", "audio/mpeg"] },
   photo: { maxBytes: 1_500_000, maxDurationMs: 0, types: ["image/jpeg", "image/webp", "image/png"] }
@@ -18,19 +21,6 @@ export function mediaLabel(kind, durationMs) {
   return "📷 Foto";
 }
 
-async function sha256(text) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-export async function sessionUser(request, env) {
-  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-  if (!token || token.length > 200) return null;
-  const row = await env.DB.prepare(
-    "SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?"
-  ).bind(await sha256(token), Date.now()).first();
-  return row ? Number(row.user_id) : null;
-}
 
 export async function isMember(env, convId, userId) {
   const row = await env.DB.prepare(

@@ -272,7 +272,9 @@ export class KontakRoom extends DurableObject {
           "ALTER TABLE messages ADD COLUMN client_id TEXT DEFAULT ''",
           "CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
           "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, conv_id INTEGER NOT NULL, owner_id INTEGER NOT NULL, message_id INTEGER, kind TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, duration_ms INTEGER DEFAULT 0, r2_key TEXT NOT NULL, created_at INTEGER NOT NULL)",
-          "CREATE UNIQUE INDEX IF NOT EXISTS messages_client ON messages(conv_id, client_id) WHERE client_id != ''"
+          "CREATE UNIQUE INDEX IF NOT EXISTS messages_client ON messages(conv_id, client_id) WHERE client_id != ''",
+          "ALTER TABLE users ADD COLUMN phone_verified_at INTEGER",
+          "CREATE TABLE IF NOT EXISTS phone_otps (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, user_id INTEGER NOT NULL, code_hash TEXT NOT NULL, salt TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, ip TEXT, sender TEXT)"
         ];
         for (const sql of sqls) {
           try { await this.env.DB.prepare(sql).run(); } catch {}
@@ -482,8 +484,18 @@ export class KontakRoom extends DurableObject {
     return raw;
   }
 
+  selfUser(user) {
+    return {
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+      hasPhoto: user.photo ? 1 : 0,
+      phoneVerified: !!(user.phoneVerifiedAt ?? user.phone_verified_at)
+    };
+  }
+
   async authOk(ws, user) {
-    const me = { id: user.id, name: user.name, phone: user.phone, hasPhoto: user.photo ? 1 : 0 };
+    const me = this.selfUser(user);
     const token = await this.openSession(user.id);
     await this.addOnline(me.id, ws);
     try {
@@ -553,7 +565,7 @@ export class KontakRoom extends DurableObject {
     if (!row || Number(row.expires_at) < Date.now()) throw new Error("bad-creds");
     const user = await this.db.select().from(schema.users).where(eq(schema.users.id, row.user_id)).get();
     if (!user) throw new Error("bad-creds");
-    const me = { id: user.id, name: user.name, phone: user.phone, hasPhoto: user.photo ? 1 : 0 };
+    const me = this.selfUser(user);
     await this.addOnline(me.id, ws);
     try {
       const att = ws.deserializeAttachment() || {};

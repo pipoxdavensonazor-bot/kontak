@@ -1,6 +1,8 @@
 import { KontakRoom } from "./kontak-room.js";
 import { vapidPublicKey } from "./push.js";
 import { handleMedia } from "./media.js";
+import { handleVerify } from "./verify.js";
+import { sha256 } from "./session.js";
 
 export { KontakRoom };
 
@@ -56,11 +58,6 @@ function originAllowed(request, url, env) {
   return extra.some((o) => { try { return new URL(o).host === host; } catch { return false; } });
 }
 
-async function sha256(text) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export default {
   async fetch(request, env) {
     try {
@@ -76,6 +73,10 @@ export default {
 
       if (url.pathname === "/media" || url.pathname.startsWith("/media/")) {
         return handleMedia(request, env, url);
+      }
+
+      if (url.pathname === "/verify" || url.pathname.startsWith("/verify/")) {
+        return handleVerify(request, env, url);
       }
 
       if (url.pathname === "/turn") {

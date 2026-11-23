@@ -17,7 +17,19 @@ storage = "sqlite"
 # Secrets (never in this file): set with `npx wrangler secret put <NAME>`
 #   VAPID_PUBLIC, VAPID_JWK        -> push notifications (npm run vapid:gen)
 #   TURN_KEY_ID, TURN_API_TOKEN    -> optional Cloudflare Calls TURN (STUN only without them)
+#   BIRD_ACCESS_KEY                -> Bird workspace API key (sms:write). Without it, SMS verification is off.
 # Local dev: put them in .dev.vars (git-ignored).
+
+[vars]
+BIRD_WORKSPACE_ID = "ws_01m82yzv1zf7stwgm60a109kt8"
+BIRD_SENDER = "KONTAK"
+# Optional: BIRD_CHANNEL_ID (not required by the current Bird SMS API)
+# Optional: BIRD_API_HOST, otherwise inferred from the key prefix (bk_us1_ / bk_eu1_)
+
+[previews.vars]
+SMS_FAKE_SENDER = "1"
+BIRD_WORKSPACE_ID = "ws_01m82yzv1zf7stwgm60a109kt8"
+BIRD_SENDER = "KONTAK"
 
 # Assets
 [assets]
@@ -39,7 +51,7 @@ bucket_name = "kontak-media"
 
 # Workers Builds branch Previews (`wrangler preview`): never touch production data.
 # Each Preview gets its own Durable Object namespace automatically; D1 points to a
-# separate database (kontak-preview, migrations 0001-0004 applied).
+# separate database (kontak-preview, migrations applied independently of production).
 [[previews.durable_objects.bindings]]
 name = "KONTAK"
 class_name = "KontakRoom"
