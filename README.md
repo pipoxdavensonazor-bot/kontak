@@ -1,4 +1,4 @@
-# Kontak v24
+# Kontak v25
 
 Messagerie temps réel et appels audio/vidéo (WebRTC), en créole haïtien.
 Servie par **Cloudflare Workers** : un Worker (`src/worker.js`), un Durable Object
@@ -33,6 +33,7 @@ La CI GitHub Actions (`.github/workflows/ci.yml`) lance `npm ci`, les tests,
 | `VAPID_JWK` | clé privée VAPID au format JWK (JSON) | oui |
 | `TURN_KEY_ID` / `TURN_API_TOKEN` | relais TURN Cloudflare Calls (Realtime) | non : sans eux, `/turn` donne STUN seul |
 | `ALLOWED_ORIGINS` | origines WebSocket en plus du domaine du Worker (liste séparée par des virgules) | non |
+| `BIRD_ACCESS_KEY` | clé API Bird (`sms:write`) pour envoyer le SMS de vérification | non : sans elle, la vérification SMS est désactivée en production |
 
 ```sh
 npm run vapid:gen                       # imprime une nouvelle paire, n'écrit rien
@@ -54,7 +55,8 @@ npm run deploy          # wrangler deploy
 
 Les migrations sont dans `migrations/` (`npm run db:migrate:local` / `npm run db:migrate:remote`).
 `0004_push_calls.sql` déclare les tables `push_subs` et `calls`, autrefois créées seulement
-au démarrage ; tout y est en `IF NOT EXISTS`.
+au démarrage ; tout y est en `IF NOT EXISTS`. `0006_phone_verify.sql` ajoute
+`users.phone_verified_at` et la table `phone_otps` (IF NOT EXISTS).
 
 ## Notes vocales et photos (v24)
 
@@ -77,4 +79,12 @@ au démarrage ; tout y est en `IF NOT EXISTS`.
 - Chaque message WebSocket est validé par un schéma Zod ; les connexions WebSocket sans `Origin` ou d'une autre origine sont refusées.
 - Nettoyage : anciens fichiers Express/Render retirés, scripts npm Wrangler, tests et CI.
 
-Les numéros ne sont pas vérifiés par SMS. Ce n'est pas un chiffrement de bout en bout.
+## Vérification SMS (v25)
+
+- Optionnelle : les comptes existants et les nouvelles inscriptions fonctionnent sans vérifier le numéro.
+- Si le secret `BIRD_ACCESS_KEY` est absent, le flux est éteint (aucun appel à Bird, l'app ne propose pas la vérification).
+- Les prévisualisations et les tests utilisent un envoi factice (`SMS_FAKE_SENDER=1` dans `[previews.vars]`).
+- Le Worker génère un code à 6 chiffres, le stocke haché dans D1 (expire en 10 min, 5 essais, 60 s entre deux envois, plafond quotidien par numéro et par IP), puis l'envoie via l'API SMS Bird (`POST /v1/sms/messages`, expéditeur `KONTAK`, texte créole « Kòd verifikasyon Kontak ou se: 123456 »).
+- Config (pas un secret) : `BIRD_WORKSPACE_ID`, `BIRD_SENDER`. La clé se crée dans le tableau de bord Bird, Platform tools > API keys, portée `sms:write`. Il faut aussi créditer le portefeuille et activer Haïti sous SMS > Destinations.
+
+Ce n'est pas un chiffrement de bout en bout.
