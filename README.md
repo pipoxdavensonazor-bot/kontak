@@ -1,4 +1,4 @@
-# Kontak v28
+# Kontak v29
 
 Messagerie temps réel et appels audio/vidéo (WebRTC), en créole haïtien.
 Servie par **Cloudflare Workers** : un Worker (`src/worker.js`), un Durable Object
@@ -21,6 +21,13 @@ du service worker, `console` et `GET /version`). La barre de connexion n’appar
 qu’en cas de problème, en créole simple. Les pastilles marketing (« Mòd SAT », etc.),
 le pied de page technique et le bouton TURN ont été retirés ; TURN reste actif
 côté serveur. Langue, contraste et mode « Rezo fèb » sont dans le menu Paramèt.
+
+## Mot-symbole (v29)
+
+Le nom s’affiche en un seul mot, **Kontak** (« tak » reste vert). L’espace visible
+entre « Kon » et « tak » venait du `gap` flex du bandeau ; le mot est maintenant
+dans un seul élément `.wordmark`.
+
 
 
 

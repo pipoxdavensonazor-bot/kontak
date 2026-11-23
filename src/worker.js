@@ -64,7 +64,7 @@ export default {
       const url = new URL(request.url);
 
       if (url.pathname === "/version") {
-        return Response.json({ build: "v28" }, { headers: { "Cache-Control": "no-store" } });
+        return Response.json({ build: "v29" }, { headers: { "Cache-Control": "no-store" } });
       }
 
       if (url.pathname === "/vapid") {
