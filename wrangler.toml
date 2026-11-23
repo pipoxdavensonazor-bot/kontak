@@ -31,3 +31,16 @@ binding = "DB"
 database_name = "kontak"
 database_id = "54fcd242-55db-4a79-be1e-21ee6a62b159"
 migrations_dir = "migrations"
+
+# Workers Builds branch Previews (`wrangler preview`): never touch production data.
+# Each Preview gets its own Durable Object namespace automatically; D1 points to a
+# separate database (kontak-preview, migrations 0001-0004 applied).
+[[previews.durable_objects.bindings]]
+name = "KONTAK"
+class_name = "KontakRoom"
+
+[[previews.d1_databases]]
+binding = "DB"
+database_name = "kontak-preview"
+database_id = "1361776c-e8a9-4b50-9e8e-a285ee901096"
+migrations_dir = "migrations"
