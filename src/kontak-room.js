@@ -274,7 +274,10 @@ export class KontakRoom extends DurableObject {
           "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, conv_id INTEGER NOT NULL, owner_id INTEGER NOT NULL, message_id INTEGER, kind TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, duration_ms INTEGER DEFAULT 0, r2_key TEXT NOT NULL, created_at INTEGER NOT NULL)",
           "CREATE UNIQUE INDEX IF NOT EXISTS messages_client ON messages(conv_id, client_id) WHERE client_id != ''",
           "ALTER TABLE users ADD COLUMN phone_verified_at INTEGER",
-          "CREATE TABLE IF NOT EXISTS phone_otps (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, user_id INTEGER NOT NULL, code_hash TEXT NOT NULL, salt TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, ip TEXT, sender TEXT)"
+          "CREATE TABLE IF NOT EXISTS phone_otps (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, user_id INTEGER NOT NULL, code_hash TEXT NOT NULL, salt TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, ip TEXT, sender TEXT)",
+          "ALTER TABLE users ADD COLUMN email TEXT",
+          "ALTER TABLE users ADD COLUMN email_verified_at INTEGER",
+          "CREATE TABLE IF NOT EXISTS email_otps (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, user_id INTEGER NOT NULL, code_hash TEXT NOT NULL, salt TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, ip TEXT, sender TEXT)"
         ];
         for (const sql of sqls) {
           try { await this.env.DB.prepare(sql).run(); } catch {}
@@ -490,7 +493,9 @@ export class KontakRoom extends DurableObject {
       name: user.name,
       phone: user.phone,
       hasPhoto: user.photo ? 1 : 0,
-      phoneVerified: !!(user.phoneVerifiedAt ?? user.phone_verified_at)
+      phoneVerified: !!(user.phoneVerifiedAt ?? user.phone_verified_at),
+      email: user.email || "",
+      emailVerified: !!(user.emailVerifiedAt ?? user.email_verified_at)
     };
   }
 

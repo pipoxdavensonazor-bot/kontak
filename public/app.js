@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v25";
+  const BUILD = "v26";
   const $ = (id) => document.getElementById(id);
   const STR = {
     kr: { connecting: "Ap konekte…", connected: "Konekte", offline: "Dekonekte", login: "Konekte", register: "Kreye kont", send: "Voye", type: "Ekri mesaj…", search: "Chache non oswa nimewo…", welcome: "Byenveni", typing: "ap ekri…", call: "Apèl videyo", audio: "Apèl odyo", loading: "Tann…" },
@@ -28,7 +28,12 @@
     "too-many-tries": "Twòp esè. Voye yon nouvo kòd.",
     "already-verified": "Nimewo a deja verifye.",
     "sms-unavailable": "Pa ka voye SMS la kounye a. Eseye pita.",
-    "bad-phone": "Nimewo a pa ka verifye."
+    "bad-phone": "Nimewo a pa ka verifye.",
+    "email-off": "Verifikasyon imèl pa disponib pou kounye a.",
+    "email-unavailable": "Pa ka voye imèl la kounye a. Eseye pita.",
+    "email-not-ready": "Voye imèl poko pare. Eskize, eseye pita.",
+    "bad-email": "Adrès imèl la pa bon.",
+    "email-taken": "Imèl sa deja verifye sou yon lòt kont."
   };
 
   let lang = localStorage.getItem("kontak_lang") || "kr";
@@ -422,6 +427,12 @@
     const badge = $("profileVerified");
     if (badge && me) {
       badge.textContent = me.phoneVerified ? "Nimewo verifye" : "Nimewo poko verifye";
+    }
+    const mail = $("profileEmail");
+    if (mail && me) {
+      if (me.emailVerified && me.email) mail.textContent = "Imèl verifye: " + me.email;
+      else if (me.email) mail.textContent = "Imèl poko verifye: " + me.email;
+      else mail.textContent = "";
     }
   }
 
@@ -1385,6 +1396,11 @@
     "already-verified": ERR["already-verified"],
     "sms-unavailable": ERR["sms-unavailable"],
     "bad-phone": ERR["bad-phone"],
+    "email-off": ERR["email-off"],
+    "email-unavailable": ERR["email-unavailable"],
+    "email-not-ready": ERR["email-not-ready"],
+    "bad-email": ERR["bad-email"],
+    "email-taken": ERR["email-taken"],
     auth: "Sesyon fini. Rekonekte."
   };
 
@@ -1421,21 +1437,39 @@
     if (card) card.hidden = !enabled || verified;
     const phoneLabel = me && me.phone ? "+" + String(me.phone).replace(/\D/g, "") : "";
     if ($("verifyPhone")) $("verifyPhone").textContent = phoneLabel;
+
+    const emailOn = !!(me && me._emailVerifyEnabled);
+    const emailOk = !!(me && me.emailVerified);
+    const emailLater = sessionStorage.getItem("kontak_email_verify_later") === "1";
+    const emailSide = $("verifyEmailSide");
+    const emailBanner = $("verifyEmailBanner");
+    const emailCard = $("verifyEmailCard");
+    if (emailSide) emailSide.hidden = !emailOn || emailOk || emailLater;
+    if (emailBanner) emailBanner.hidden = !emailOn || emailOk || emailLater;
+    if (emailCard) emailCard.hidden = !emailOn || emailOk;
+    if (me && me.email) {
+      if ($("verifyEmailInput")) $("verifyEmailInput").value = me.email;
+      if ($("verifyEmailInputBanner")) $("verifyEmailInputBanner").value = me.email;
+    }
     paintMe();
   }
 
   async function maybeShowVerify() {
-    if (!me || me.phoneVerified || !localStorage.getItem("kontak_token")) {
-      if (me) me._verifyEnabled = false;
+    if (!me || !localStorage.getItem("kontak_token")) {
+      if (me) { me._verifyEnabled = false; me._emailVerifyEnabled = false; }
       refreshVerifyUi();
       return;
     }
     try {
       const res = await verifyApi("/verify/status");
       me._verifyEnabled = !!(res.data && res.data.enabled);
+      me._emailVerifyEnabled = !!(res.data && res.data.emailEnabled);
       if (res.data && res.data.verified) me.phoneVerified = true;
+      if (res.data && res.data.emailVerified) me.emailVerified = true;
+      if (res.data && res.data.email) me.email = res.data.email;
     } catch {
       me._verifyEnabled = false;
+      me._emailVerifyEnabled = false;
     }
     refreshVerifyUi();
   }
@@ -1512,6 +1546,103 @@
     const el = $(id);
     if (!el) return;
     el.onkeydown = (e) => { if (e.key === "Enter") checkVerifyCode(id); };
+  });
+
+  function setEmailHint(msg, isErr) {
+    ["verifyEmailHint", "verifyEmailHintBanner"].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.textContent = msg || "";
+      el.style.color = isErr ? "var(--warn)" : "";
+    });
+  }
+
+  function currentVerifyEmail() {
+    const a = $("verifyEmailInput") && $("verifyEmailInput").value;
+    const b = $("verifyEmailInputBanner") && $("verifyEmailInputBanner").value;
+    return String(a || b || (me && me.email) || "").trim();
+  }
+
+  async function sendEmailCode() {
+    const email = currentVerifyEmail();
+    if (!email) { setEmailHint("Mete adrès imèl ou.", true); return; }
+    setEmailHint("N ap voye kòd la…");
+    ["verifyEmailSendBtn", "verifyEmailSendBanner"].forEach((id) => { if ($(id)) $(id).disabled = true; });
+    try {
+      const res = await verifyApi("/verify/email/request", { email });
+      if (res.data && res.data.verified) {
+        me.emailVerified = true;
+        me.email = res.data.email || email;
+        setEmailHint("Imèl la deja verifye.");
+        refreshVerifyUi();
+        toast("Imèl verifye.");
+        return;
+      }
+      if (!res.ok) {
+        let msg = VERIFY_ERR[res.data && res.data.error] || "Pa ka voye kòd la.";
+        if (res.data && res.data.error === "cooldown" && res.data.retryAfter) {
+          msg = "Tann " + res.data.retryAfter + " segonn anvan ou voye yon lòt kòd.";
+        }
+        setEmailHint(msg, true);
+        toast(msg, true);
+        return;
+      }
+      if (res.data && res.data.email) me.email = res.data.email;
+      ["verifyEmailCodeRow", "verifyEmailCodeRowBanner"].forEach((id) => { if ($(id)) $(id).hidden = false; });
+      setEmailHint("Nou voye yon kòd 6 chif. Li ekspire nan 10 minit. Gade bwat resepsyon ou, oswa spam.");
+      if ($("verifyEmailCodeInput")) $("verifyEmailCodeInput").focus();
+    } catch {
+      setEmailHint("Pa ka voye kòd la.", true);
+    } finally {
+      ["verifyEmailSendBtn", "verifyEmailSendBanner"].forEach((id) => { if ($(id)) $(id).disabled = false; });
+    }
+  }
+
+  async function checkEmailCode(inputId) {
+    const input = $(inputId);
+    const code = input ? String(input.value || "").replace(/\D/g, "") : "";
+    if (code.length !== 6) { setEmailHint("Mete kòd 6 chif la.", true); return; }
+    setEmailHint("Ap verifye…");
+    try {
+      const res = await verifyApi("/verify/email/check", { code, email: currentVerifyEmail() });
+      if (res.ok && res.data && res.data.verified) {
+        me.emailVerified = true;
+        me.email = res.data.email || currentVerifyEmail();
+        sessionStorage.removeItem("kontak_email_verify_later");
+        setEmailHint("Imèl verifye.");
+        refreshVerifyUi();
+        toast("Imèl verifye.");
+        return;
+      }
+      let msg = VERIFY_ERR[res.data && res.data.error] || "Kòd la pa bon.";
+      if (res.data && res.data.error === "bad-code" && res.data.remaining != null) {
+        msg = "Kòd la pa bon. " + res.data.remaining + " esè rete.";
+      }
+      setEmailHint(msg, true);
+      toast(msg, true);
+    } catch {
+      setEmailHint("Pa ka verifye kounye a.", true);
+    }
+  }
+
+  if ($("verifyEmailSendBtn")) $("verifyEmailSendBtn").onclick = sendEmailCode;
+  if ($("verifyEmailSendBanner")) $("verifyEmailSendBanner").onclick = sendEmailCode;
+  if ($("verifyEmailCheckBtn")) $("verifyEmailCheckBtn").onclick = () => checkEmailCode("verifyEmailCodeInput");
+  if ($("verifyEmailCheckBanner")) $("verifyEmailCheckBanner").onclick = () => checkEmailCode("verifyEmailCodeBanner");
+  if ($("verifyEmailLaterBtn")) $("verifyEmailLaterBtn").onclick = () => {
+    sessionStorage.setItem("kontak_email_verify_later", "1");
+    refreshVerifyUi();
+  };
+  if ($("verifyEmailOpenMe")) $("verifyEmailOpenMe").onclick = () => {
+    sessionStorage.removeItem("kontak_email_verify_later");
+    if (typeof showTab === "function") showTab("me");
+    const el = $("verifyEmailCard");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  ["verifyEmailCodeInput", "verifyEmailCodeBanner"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.onkeydown = (e) => { if (e.key === "Enter") checkEmailCode(id); };
   });
 
   function showTab(name) {

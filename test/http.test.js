@@ -4,11 +4,11 @@ import worker, { iceServersFor } from "../src/worker.js";
 import { call, connect, register, ORIGIN } from "./helpers.js";
 
 describe("HTTP endpoints", () => {
-  it("serves the app shell with build v25", async () => {
+  it("serves the app shell with build v26", async () => {
     const res = await call("/");
     expect(res.status).toBe(200);
     const app = await (await call("/app.js")).text();
-    expect(app).toContain('BUILD = "v25"');
+    expect(app).toContain('BUILD = "v26"');
   });
 
   it("/vapid returns the public key from the secret", async () => {
@@ -62,9 +62,9 @@ describe("HTTP endpoints", () => {
 });
 
 describe("service worker", () => {
-  it("uses cache v25 and never caches /media or /verify", async () => {
+  it("uses cache v26 and never caches /media or /verify", async () => {
     const sw = await (await call("/sw.js")).text();
-    expect(sw).toContain('"kontak-v25"');
+    expect(sw).toContain('"kontak-v26"');
     expect(sw).toContain('url.pathname.startsWith("/media")');
     expect(sw).toContain('url.pathname.startsWith("/verify")');
   });
