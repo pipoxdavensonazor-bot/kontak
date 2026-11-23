@@ -14,11 +14,11 @@
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=28">
+<link rel="stylesheet" href="styles.css?v=29">
 </head>
 <body>
 <div id="topbar">
-  <div id="logo"><img class="brand-mark" src="logo.svg" width="28" height="28" alt="">Kon<span>tak</span></div>
+  <div id="logo"><img class="brand-mark" src="logo.svg" width="28" height="28" alt=""><span class="wordmark">Kon<span>tak</span></span></div>
   <div class="sp"></div>
   <button id="menuBtn" class="ghost" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menuPanel">Paramèt</button>
   <button id="logoutBtn" class="ghost" type="button" hidden>Soti</button>
@@ -32,7 +32,7 @@
 <div id="app">
   <div id="authView">
     <section id="hero">
-      <div class="mark"><img class="brand-mark" src="logo.svg" width="52" height="52" alt="">Kon<span>tak</span></div>
+      <div class="mark"><img class="brand-mark" src="logo.svg" width="52" height="52" alt=""><span class="wordmark">Kon<span>tak</span></span></div>
       <h1>Pale ak moun ou yo, kote yo ye.</h1>
       <p>Mesaj, apèl odyo ak videyo. Pou Ayiti, epi pou moun ki aletranje. Li mache sou rezo fèb.</p>
       <div id="installBanner" class="install-card">
@@ -306,7 +306,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=28"></script>
+<script src="app.js?v=29"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -333,7 +333,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=28");
+  navigator.serviceWorker.register("/sw.js?v=29");
 }
 </script>
 </body>

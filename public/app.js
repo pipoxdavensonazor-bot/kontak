@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const BUILD = "v28";
+  const BUILD = "v29";
   try { console.info("Kontak", BUILD); } catch {}
   const $ = (id) => document.getElementById(id);
   const STR = {
