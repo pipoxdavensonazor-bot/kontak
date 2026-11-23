@@ -9,6 +9,8 @@ export const users = sqliteTable("users", {
   createdAt: integer("created_at"),
   photo: text("photo").default(""),
   phoneVerifiedAt: integer("phone_verified_at"),
+  email: text("email"),
+  emailVerifiedAt: integer("email_verified_at"),
 });
 
 export const conversations = sqliteTable("conversations", {
@@ -75,6 +77,20 @@ export const media = sqliteTable("media", {
 export const phoneOtps = sqliteTable("phone_otps", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   phone: text("phone").notNull(),
+  userId: integer("user_id").notNull(),
+  codeHash: text("code_hash").notNull(),
+  salt: text("salt").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  consumedAt: integer("consumed_at"),
+  ip: text("ip"),
+  sender: text("sender"),
+});
+
+export const emailOtps = sqliteTable("email_otps", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  email: text("email").notNull(),
   userId: integer("user_id").notNull(),
   codeHash: text("code_hash").notNull(),
   salt: text("salt").notNull(),

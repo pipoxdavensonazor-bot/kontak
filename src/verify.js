@@ -10,9 +10,10 @@
 // (workspace keys). The retired Engagement Platform AccessKey +
 // /workspaces/{id}/channels/{id}/messages path is not used.
 //
-// Feature flag: without BIRD_ACCESS_KEY the flow is off, unless
-// SMS_FAKE_SENDER=1 (previews and tests). Existing users are never forced
-// to verify; users.phone_verified_at stays NULL until a correct code.
+// Feature flag: without BIRD_ACCESS_KEY the SMS flow is off, unless
+// SMS_FAKE_SENDER=1 (previews and tests). Email verification uses the
+// Cloudflare send_email binding and EMAIL_FROM; it is off without them,
+// unless EMAIL_FAKE_SENDER=1. Existing users are never forced to verify.
 
 import { sessionUser } from "./session.js";
 
@@ -140,7 +141,13 @@ export async function ensureVerifySchema(env) {
         "ALTER TABLE users ADD COLUMN phone_verified_at INTEGER",
         "CREATE TABLE IF NOT EXISTS phone_otps (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, user_id INTEGER NOT NULL, code_hash TEXT NOT NULL, salt TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, ip TEXT, sender TEXT)",
         "CREATE INDEX IF NOT EXISTS idx_phone_otps_phone_created ON phone_otps(phone, created_at)",
-        "CREATE INDEX IF NOT EXISTS idx_phone_otps_user ON phone_otps(user_id, created_at)"
+        "CREATE INDEX IF NOT EXISTS idx_phone_otps_user ON phone_otps(user_id, created_at)",
+        "ALTER TABLE users ADD COLUMN email TEXT",
+        "ALTER TABLE users ADD COLUMN email_verified_at INTEGER",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL AND email != ''",
+        "CREATE TABLE IF NOT EXISTS email_otps (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, user_id INTEGER NOT NULL, code_hash TEXT NOT NULL, salt TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, ip TEXT, sender TEXT)",
+        "CREATE INDEX IF NOT EXISTS idx_email_otps_email_created ON email_otps(email, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_email_otps_user ON email_otps(user_id, created_at)"
       ];
       for (const sql of sqls) {
         try { await env.DB.prepare(sql).run(); } catch {}
@@ -271,20 +278,231 @@ export async function checkVerification(env, { userId, code, now = Date.now() } 
   return { status: 200, body: { ok: true, verified: true } };
 }
 
+
+export function emailVerificationMode(env) {
+  if (env && (env.EMAIL_FAKE_SENDER === "1" || env.EMAIL_FAKE_SENDER === "true")) return "fake";
+  if (env && env.EMAIL && (env.EMAIL_FROM || env.EMAIL_FROM_ADDRESS)) return "cloudflare";
+  return "off";
+}
+
+export function normalizeEmail(input) {
+  const raw = String(input || "").trim().toLowerCase();
+  if (raw.length < 5 || raw.length > 200) return null;
+  if (raw.includes("..") || raw.includes(" ") || raw.startsWith(".") || raw.includes("@.")) return null;
+  if (!/^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/.test(raw)) return null;
+  return raw;
+}
+
+export function parseSender(from) {
+  const s = String(from || "Kontak <no-reply@klirline.ca>").trim();
+  const m = s.match(/^(.+?)\s*<([^>]+)>$/);
+  if (m) return { name: m[1].replace(/^["']|["']$/g, "").trim() || "Kontak", email: m[2].trim() };
+  if (s.includes("@")) return { name: "Kontak", email: s };
+  return { name: "Kontak", email: "no-reply@klirline.ca" };
+}
+
+export const EMAIL_SUBJECT = "Kòd verifikasyon Kontak";
+
+export function emailText(code) {
+  return "Kòd verifikasyon Kontak ou se: " + code + "\n\nLi ekspire nan 10 minit. Si ou pa te mande kòd sa a, ignore imèl sa a.\n\n— Kontak";
+}
+
+export function emailHtml(code) {
+  return "<p>Kòd verifikasyon Kontak ou se:</p><p style=\"font-size:28px;letter-spacing:0.2em;font-weight:700\">" +
+    String(code) + "</p><p>Li ekspire nan 10 minit. Si ou pa te mande kòd sa a, ignore imèl sa a.</p><p>— Kontak</p>";
+}
+
+export function buildEmailMessage(env, to, code) {
+  const from = parseSender((env && (env.EMAIL_FROM || env.EMAIL_FROM_ADDRESS)) || "Kontak <no-reply@klirline.ca>");
+  return {
+    to,
+    from,
+    subject: EMAIL_SUBJECT,
+    text: emailText(code),
+    html: emailHtml(code)
+  };
+}
+
+async function checkEmailSendLimits(env, email, ip, now) {
+  const last = await env.DB.prepare(
+    "SELECT created_at FROM email_otps WHERE email = ? ORDER BY id DESC LIMIT 1"
+  ).bind(email).first();
+  if (last && now - Number(last.created_at) < OTP.RESEND_MS) {
+    const retryAfter = Math.ceil((OTP.RESEND_MS - (now - Number(last.created_at))) / 1000);
+    return { status: 429, body: { error: "cooldown", retryAfter } };
+  }
+  const day = now - 24 * 60 * 60 * 1000;
+  const sentEmail = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM email_otps WHERE email = ? AND created_at > ? AND sender IN ('cloudflare', 'fake', 'pending')"
+  ).bind(email, day).first();
+  if ((Number(sentEmail && sentEmail.n) || 0) >= OTP.DAILY_PER_PHONE) return { status: 429, body: { error: "daily-limit" } };
+  if (ip) {
+    const sentIp = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM email_otps WHERE ip = ? AND created_at > ? AND sender IN ('cloudflare', 'fake', 'pending')"
+    ).bind(ip, day).first();
+    if ((Number(sentIp && sentIp.n) || 0) >= OTP.DAILY_PER_IP) return { status: 429, body: { error: "slow-down" } };
+    const recentIp = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM email_otps WHERE ip = ? AND created_at > ?"
+    ).bind(ip, now - OTP.IP_WINDOW_MS).first();
+    if ((Number(recentIp && recentIp.n) || 0) >= OTP.IP_WINDOW_MAX) return { status: 429, body: { error: "slow-down" } };
+  }
+  return null;
+}
+
+function randomHex16() {
+  return [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function requestEmailVerification(env, { userId, email, ip, now = Date.now(), sendImpl } = {}) {
+  const mode = emailVerificationMode(env);
+  if (mode === "off") return { status: 404, body: { error: "email-off", enabled: false } };
+  await ensureVerifySchema(env);
+
+  const user = await env.DB.prepare(
+    "SELECT id, email, email_verified_at FROM users WHERE id = ?"
+  ).bind(userId).first();
+  if (!user) return { status: 401, body: { error: "auth" } };
+
+  const target = normalizeEmail(email || user.email);
+  if (!target) return { status: 400, body: { error: "bad-email" } };
+
+  if (user.email_verified_at && normalizeEmail(user.email) === target) {
+    return { status: 409, body: { error: "already-verified", verified: true, email: target } };
+  }
+
+  const taken = await env.DB.prepare(
+    "SELECT id FROM users WHERE email = ? AND id != ? AND email_verified_at IS NOT NULL LIMIT 1"
+  ).bind(target, userId).first();
+  if (taken) return { status: 409, body: { error: "email-taken" } };
+
+  const limited = await checkEmailSendLimits(env, target, ip, now);
+  if (limited) return limited;
+
+  const code = generateOtp();
+  const salt = randomHex16();
+  const codeHash = await hashOtp(code, salt, target);
+  const expiresAt = now + OTP.EXPIRY_MS;
+  const ins = await env.DB.prepare(
+    "INSERT INTO email_otps (email, user_id, code_hash, salt, attempts, created_at, expires_at, consumed_at, ip, sender) VALUES (?, ?, ?, ?, 0, ?, ?, NULL, ?, ?)"
+  ).bind(target, userId, codeHash, salt, now, expiresAt, ip || "", "pending").run();
+  const otpId = ins.meta && ins.meta.last_row_id;
+
+  if (mode === "fake") {
+    await env.DB.prepare("UPDATE email_otps SET sender = 'fake' WHERE id = ?").bind(otpId).run();
+    const masked = target.replace(/^(.).*(@.*)$/, "$1***$2");
+    console.log("otp: fake email queued for " + masked);
+    return { status: 200, body: { ok: true, expiresIn: OTP.EXPIRY_MS / 1000, cooldown: OTP.RESEND_MS / 1000, email: target } };
+  }
+
+  const message = buildEmailMessage(env, target, code);
+  try {
+    const send = sendImpl || (env.EMAIL && env.EMAIL.send && env.EMAIL.send.bind(env.EMAIL));
+    if (!send) throw Object.assign(new Error("email-off"), { code: "E_SENDER_DOMAIN_NOT_CONFIGURED" });
+    await send(message);
+  } catch (e) {
+    await env.DB.prepare("UPDATE email_otps SET sender = 'failed' WHERE id = ?").bind(otpId).run();
+    console.warn("otp: email send failed", e && e.code, e && e.message);
+    const codeName = e && e.code;
+    if (codeName === "E_RECIPIENT_PLAN_RESTRICTED" || codeName === "E_RECIPIENT_NOT_ALLOWED" || codeName === "E_SENDER_DOMAIN_NOT_AVAILABLE" || codeName === "E_SENDER_DOMAIN_NOT_CONFIGURED") {
+      return { status: 503, body: { error: "email-not-ready" } };
+    }
+    return { status: 503, body: { error: "email-unavailable" } };
+  }
+  await env.DB.prepare("UPDATE email_otps SET sender = 'cloudflare' WHERE id = ?").bind(otpId).run();
+  return { status: 200, body: { ok: true, expiresIn: OTP.EXPIRY_MS / 1000, cooldown: OTP.RESEND_MS / 1000, email: target } };
+}
+
+export async function checkEmailVerification(env, { userId, code, email, now = Date.now() } = {}) {
+  const mode = emailVerificationMode(env);
+  if (mode === "off") return { status: 404, body: { error: "email-off", enabled: false } };
+  await ensureVerifySchema(env);
+
+  const raw = String(code || "").replace(/\s/g, "");
+  if (!/^\d{6}$/.test(raw)) return { status: 400, body: { error: "bad-input" } };
+
+  const user = await env.DB.prepare(
+    "SELECT id, email, email_verified_at FROM users WHERE id = ?"
+  ).bind(userId).first();
+  if (!user) return { status: 401, body: { error: "auth" } };
+
+  const otpHint = await env.DB.prepare(
+    "SELECT email FROM email_otps WHERE user_id = ? AND consumed_at IS NULL ORDER BY id DESC LIMIT 1"
+  ).bind(userId).first();
+  const target = normalizeEmail(email || (otpHint && otpHint.email) || user.email);
+  if (!target) return { status: 400, body: { error: "bad-email" } };
+
+  if (user.email_verified_at && normalizeEmail(user.email) === target) {
+    return { status: 200, body: { ok: true, verified: true, email: target } };
+  }
+
+  const otp = await env.DB.prepare(
+    "SELECT * FROM email_otps WHERE user_id = ? AND email = ? AND consumed_at IS NULL ORDER BY id DESC LIMIT 1"
+  ).bind(userId, target).first();
+
+  const salt = otp ? otp.salt : "0".repeat(32);
+  const expected = otp ? otp.code_hash : "0".repeat(64);
+  const actual = await hashOtp(raw, salt, target);
+  const match = !!(otp && timingSafeEqual(actual, expected));
+
+  if (!otp || Number(otp.expires_at) < now) return { status: 400, body: { error: "expired" } };
+  if (Number(otp.attempts) >= OTP.MAX_ATTEMPTS) return { status: 429, body: { error: "too-many-tries" } };
+  if (!match) {
+    const attempts = Number(otp.attempts) + 1;
+    await env.DB.prepare("UPDATE email_otps SET attempts = ? WHERE id = ?").bind(attempts, otp.id).run();
+    if (attempts >= OTP.MAX_ATTEMPTS) return { status: 429, body: { error: "too-many-tries" } };
+    return { status: 400, body: { error: "bad-code", remaining: OTP.MAX_ATTEMPTS - attempts } };
+  }
+
+  const taken = await env.DB.prepare(
+    "SELECT id FROM users WHERE email = ? AND id != ? AND email_verified_at IS NOT NULL LIMIT 1"
+  ).bind(target, userId).first();
+  if (taken) return { status: 409, body: { error: "email-taken" } };
+
+  await env.DB.prepare("UPDATE email_otps SET consumed_at = ?, attempts = attempts + 1 WHERE id = ?").bind(now, otp.id).run();
+  await env.DB.prepare("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?").bind(target, now, userId).run();
+  await env.DB.prepare("UPDATE email_otps SET consumed_at = COALESCE(consumed_at, ?) WHERE user_id = ? AND consumed_at IS NULL").bind(now, userId).run();
+  return { status: 200, body: { ok: true, verified: true, email: target } };
+}
+
 export async function handleVerify(request, env, url) {
   const mode = verificationMode(env);
+  const emailMode = emailVerificationMode(env);
   const path = url.pathname;
 
   if (path === "/verify/status" && request.method === "GET") {
     const userId = await sessionUser(request, env);
-    if (!userId) return json({ enabled: mode !== "off" });
+    if (!userId) return json({ enabled: mode !== "off", emailEnabled: emailMode !== "off" });
     await ensureVerifySchema(env);
-    const user = await env.DB.prepare("SELECT phone, phone_verified_at FROM users WHERE id = ?").bind(userId).first();
+    const user = await env.DB.prepare(
+      "SELECT phone, phone_verified_at, email, email_verified_at FROM users WHERE id = ?"
+    ).bind(userId).first();
     return json({
       enabled: mode !== "off",
       verified: !!(user && user.phone_verified_at),
-      phone: user ? user.phone : null
+      phone: user ? user.phone : null,
+      emailEnabled: emailMode !== "off",
+      emailVerified: !!(user && user.email_verified_at),
+      email: user && user.email ? user.email : null
     });
+  }
+
+  if (path === "/verify/email/request" || path === "/verify/email/check") {
+    if (emailMode === "off") return json({ error: "email-off", enabled: false }, 404);
+    const userId = await sessionUser(request, env);
+    if (!userId) return json({ error: "auth" }, 401);
+    if (path === "/verify/email/request" && request.method === "POST") {
+      let body = {};
+      try { body = await request.json(); } catch { body = {}; }
+      const result = await requestEmailVerification(env, { userId, email: body && body.email, ip: clientIp(request) });
+      return json(result.body, result.status);
+    }
+    if (path === "/verify/email/check" && request.method === "POST") {
+      let body = {};
+      try { body = await request.json(); } catch { return json({ error: "bad-input" }, 400); }
+      const result = await checkEmailVerification(env, { userId, code: body && body.code, email: body && body.email, ip: clientIp(request) });
+      return json(result.body, result.status);
+    }
+    return json({ error: "not-found" }, 404);
   }
 
   if (mode === "off") return json({ error: "sms-off", enabled: false }, 404);

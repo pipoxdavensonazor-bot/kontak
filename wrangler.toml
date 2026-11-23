@@ -19,17 +19,24 @@ storage = "sqlite"
 #   TURN_KEY_ID, TURN_API_TOKEN    -> optional Cloudflare Calls TURN (STUN only without them)
 #   BIRD_ACCESS_KEY                -> Bird workspace API key (sms:write). Without it, SMS verification is off.
 # Local dev: put them in .dev.vars (git-ignored).
+# Email verification uses the send_email binding + EMAIL_FROM (no API key).
 
 [vars]
 BIRD_WORKSPACE_ID = "ws_01m82yzv1zf7stwgm60a109kt8"
 BIRD_SENDER = "KONTAK"
+EMAIL_FROM = "Kontak <no-reply@klirline.ca>"
 # Optional: BIRD_CHANNEL_ID (not required by the current Bird SMS API)
 # Optional: BIRD_API_HOST, otherwise inferred from the key prefix (bk_us1_ / bk_eu1_)
 
+[[send_email]]
+name = "EMAIL"
+
 [previews.vars]
 SMS_FAKE_SENDER = "1"
+EMAIL_FAKE_SENDER = "1"
 BIRD_WORKSPACE_ID = "ws_01m82yzv1zf7stwgm60a109kt8"
 BIRD_SENDER = "KONTAK"
+EMAIL_FROM = "Kontak <no-reply@klirline.ca>"
 
 # Assets
 [assets]

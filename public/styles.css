@@ -128,3 +128,6 @@ body.hc .verify-banner{background:#fff}
 .verify-banner b{display:block;margin-bottom:4px}
 .verify-banner p{margin:0 0 8px}
 #verifyCodeInput,#verifyCodeInputMe{letter-spacing:.3em;font-variant-numeric:tabular-nums;text-align:center;max-width:140px}
+
+#verifyEmailInput,#verifyEmailInputBanner{margin-top:6px}
+#verifyEmailCodeInput,#verifyEmailCodeBanner{letter-spacing:.3em;font-variant-numeric:tabular-nums;text-align:center;max-width:140px}

@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Kontak">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=25">
+<link rel="stylesheet" href="styles.css?v=26">
 </head>
 <body>
 <div id="topbar">
@@ -108,6 +108,11 @@
           <p id="verifyHint" class="hint"></p>
           <button id="verifyLaterBtn" class="ghost" type="button">Pita</button>
         </div>
+        <div id="verifyEmailSide" class="verify-banner" hidden>
+          <b>Verifye imèl ou</b>
+          <p>Ou ka konfime yon adrès imèl ak yon kòd 6 chif.</p>
+          <button id="verifyEmailOpenMe" class="ghost" type="button">Ouvri</button>
+        </div>
         <div id="convList"></div>
       </div>
       <div id="chatPane">
@@ -171,6 +176,7 @@
             <input id="profileName" maxlength="40">
             <div id="profilePhone" class="small"></div>
             <div id="profileVerified" class="small"></div>
+            <div id="profileEmail" class="small"></div>
           </div>
         </div>
         <div class="row" style="margin-top:10px">
@@ -189,6 +195,32 @@
           <button id="verifyCheckBtnMe" type="button">Konfime</button>
         </div>
         <p id="verifyHintMe" class="hint"></p>
+      </div>
+      <div id="verifyEmailBanner" class="verify-banner" hidden>
+        <b>Verifye imèl ou</b>
+        <p>Nou ka voye yon kòd pou konfime adrès imèl ou. Ou ka kontinye itilize Kontak san sa.</p>
+        <input id="verifyEmailInputBanner" type="email" placeholder="ou@imel.com" autocomplete="email">
+        <button id="verifyEmailSendBanner" type="button" style="margin-top:8px">Voye kòd la</button>
+        <div id="verifyEmailCodeRowBanner" class="row" hidden style="margin-top:8px">
+          <input id="verifyEmailCodeBanner" class="grow" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456">
+          <button id="verifyEmailCheckBanner" type="button">Konfime</button>
+        </div>
+        <p id="verifyEmailHintBanner" class="hint"></p>
+        <button id="verifyEmailLaterBtn" class="ghost" type="button">Pita</button>
+      </div>
+      <div id="verifyEmailCard" class="card" hidden>
+        <b>Verifikasyon imèl</b>
+        <p class="hint">Voye yon kòd pou konfime imèl ou. Ou ka kontinye itilize Kontak san sa.</p>
+        <label>Adrès imèl</label>
+        <input id="verifyEmailInput" type="email" placeholder="ou@imel.com" autocomplete="email">
+        <div class="row" style="margin-top:8px;flex-wrap:wrap">
+          <button id="verifyEmailSendBtn" type="button">Voye kòd la</button>
+        </div>
+        <div id="verifyEmailCodeRow" class="row" hidden style="margin-top:8px">
+          <input id="verifyEmailCodeInput" class="grow" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456">
+          <button id="verifyEmailCheckBtn" type="button">Konfime</button>
+        </div>
+        <p id="verifyEmailHint" class="hint"></p>
       </div>
       <div class="card">
         <b>Paramèt</b>
@@ -289,7 +321,7 @@
 </div>
 <div id="toast" hidden></div>
 
-<script src="app.js?v=25"></script>
+<script src="app.js?v=26"></script>
 <script>
 const installBanner = document.getElementById("installBanner");
 const installBtn = document.getElementById("installBtn");
@@ -316,7 +348,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
 if (installBtn) installBtn.onclick = (e) => { e.stopPropagation(); openChromeInstall(); };
 window.addEventListener("appinstalled", () => { if (installBanner) installBanner.hidden = true; });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=25");
+  navigator.serviceWorker.register("/sw.js?v=26");
 }
 </script>
 </body>
